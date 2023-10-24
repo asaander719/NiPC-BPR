@@ -15,19 +15,19 @@ import torch.optim
 import torch.utils.data
 import torch.multiprocessing as mp
 import torch.distributed as dist
-from torch.utils.tensorboard import SummaryWriter 
+from tensorboardX import SummaryWriter  
 
 from util import dataset, transform, config
 from util.util import AverageMeter, poly_learning_rate, intersectionAndUnionGPU, find_free_port
 
-cv2.ocl.setUseOpenCL(False)
+cv2.ocl.setUseOpenCL(False)#用了cv2.imread，不能结合torchvision进行数据增强，关闭Opencv的多线程
 cv2.setNumThreads(0)
 
 
-def get_parser():
+def get_parser(): #解析器拿参数
     parser = argparse.ArgumentParser(description='PyTorch Semantic Segmentation')
-    parser.add_argument('--config', type=str, default='config/Polyvore_RB.yaml', help='config file')
-    parser.add_argument('opts', help='see config/Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('--config', type=str, default='config/voc2012/voc2012_pspnet18.yaml', help='config file')
+    parser.add_argument('opts', help='see config/voc2012/voc2012_pspnet18.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)
@@ -36,7 +36,7 @@ def get_parser():
     return cfg
 
 
-def get_logger():
+def get_logger():#打印
     logger_name = "main-logger"
     logger = logging.getLogger(logger_name)
     logger.setLevel(logging.INFO)
@@ -72,10 +72,10 @@ def main():
         args.world_size = args.ngpus_per_node * args.world_size
         mp.spawn(main_worker, nprocs=args.ngpus_per_node, args=(args.ngpus_per_node, args))
     else:
-        main_worker(args.train_gpu, args.ngpus_per_node, args)
+        main_worker(args.train_gpu, args.ngpus_per_node, args)#
 
 
-def main_worker(gpu, ngpus_per_node, argss):
+def main_worker(gpu, ngpus_per_node, argss):#多分布式
     global args
     args = argss
     if args.distributed:
@@ -85,7 +85,8 @@ def main_worker(gpu, ngpus_per_node, argss):
             args.rank = args.rank * ngpus_per_node + gpu
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
 
-    if args.arch == 'psp':
+    criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label)
+    if args.arch == 'psp':#定义模型结构
         from model.pspnet import PSPNet
         model = PSPNet(layers=args.layers, classes=args.classes, zoom_factor=args.zoom_factor, criterion=criterion)
         modules_ori = [model.layer0, model.layer1, model.layer2, model.layer3, model.layer4]
@@ -97,21 +98,23 @@ def main_worker(gpu, ngpus_per_node, argss):
                        normalization_factor=args.normalization_factor, psa_softmax=args.psa_softmax, criterion=criterion)
         modules_ori = [model.layer0, model.layer1, model.layer2, model.layer3, model.layer4]
         modules_new = [model.psa, model.cls, model.aux]
-    params_list = []
+    params_list = []#空列表放参数列表，为训练用
     for module in modules_ori:
         params_list.append(dict(params=module.parameters(), lr=args.base_lr))
     for module in modules_new:
         params_list.append(dict(params=module.parameters(), lr=args.base_lr * 10))
     args.index_split = 5
     optimizer = torch.optim.SGD(params_list, lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    
+    if args.sync_bn:
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-    if main_process():
+    if main_process():#打印状态
         global logger, writer
         logger = get_logger()
         writer = SummaryWriter(args.save_path)
         logger.info(args)
         logger.info("=> creating model ...")
+        logger.info("Classes: {}".format(args.classes))
         logger.info(model)
     if args.distributed:
         torch.cuda.set_device(gpu)
@@ -120,9 +123,9 @@ def main_worker(gpu, ngpus_per_node, argss):
         args.workers = int((args.workers + ngpus_per_node - 1) / ngpus_per_node)
         model = torch.nn.parallel.DistributedDataParallel(model.cuda(), device_ids=[gpu])
     else:
-        model = torch.nn.DataParallel(model.cuda())
+        model = torch.nn.DataParallel(model.cuda())#模型迭代
 
-    if args.weight:
+    if args.weight:#加载权重
         if os.path.isfile(args.weight):
             if main_process():
                 logger.info("=> loading weight '{}'".format(args.weight))
@@ -149,18 +152,13 @@ def main_worker(gpu, ngpus_per_node, argss):
             if main_process():
                 logger.info("=> no checkpoint found at '{}'".format(args.resume))
 
-   
-    train_data = dataset.SemData(split='train', data_root=args.data_root, data_list=args.train_list, transform=train_transform)
+    train_data = dataset.SemData(split='train', data_root=args.data_root, data_list=args.train_list)
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_data)
     else:
         train_sampler = None
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=(train_sampler is None), num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
     if args.evaluate:
-        val_transform = transform.Compose([
-            transform.Crop([args.train_h, args.train_w], crop_type='center', padding=mean, ignore_label=args.ignore_label),
-            transform.ToTensor(),
-            transform.Normalize(mean=mean, std=std)])
         val_data = dataset.SemData(split='val', data_root=args.data_root, data_list=args.val_list, transform=val_transform)
         if args.distributed:
             val_sampler = torch.utils.data.distributed.DistributedSampler(val_data)
@@ -210,11 +208,6 @@ def train(train_loader, model, optimizer, epoch):
     max_iter = args.epochs * len(train_loader)
     for i, (input, target) in enumerate(train_loader):
         data_time.update(time.time() - end)
-        if args.zoom_factor != 8:
-            h = int((target.size()[1] - 1) / 8 * args.zoom_factor + 1)
-            w = int((target.size()[2] - 1) / 8 * args.zoom_factor + 1)
-            # 'nearest' mode doesn't support align_corners mode and 'bilinear' mode is fine for downsampling
-            target = F.interpolate(target.unsqueeze(1).float(), size=(h, w), mode='bilinear', align_corners=True).squeeze(1).long()
         input = input.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
         output, main_loss, aux_loss = model(input, target)
@@ -298,8 +291,6 @@ def validate(val_loader, model, criterion):
     data_time = AverageMeter()
     loss_meter = AverageMeter()
     intersection_meter = AverageMeter()
-    union_meter = AverageMeter()
-    target_meter = AverageMeter()
 
     model.eval()
     end = time.time()
@@ -351,8 +342,6 @@ def validate(val_loader, model, criterion):
     allAcc = sum(intersection_meter.sum) / (sum(target_meter.sum) + 1e-10)
     if main_process():
         logger.info('Val result: mIoU/mAcc/allAcc {:.4f}/{:.4f}/{:.4f}.'.format(mIoU, mAcc, allAcc))
-        for i in range(args.classes):
-            logger.info('Class_{} Result: iou/accuracy {:.4f}/{:.4f}.'.format(i, iou_class[i], accuracy_class[i]))
         logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
     return loss_meter.avg, mIoU, mAcc, allAcc
 

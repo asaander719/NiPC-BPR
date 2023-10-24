@@ -1,0 +1,57 @@
+# Given top recommend bottom
+DATA:
+  data_root: dataset/Polyvore_519
+  train_data: dataset/Polyvore_519/polyvore_U_519_subset_data/train_sub_data.csv
+  valid_data: dataset/Polyvore_519/polyvore_U_519_subset_data/valid_sub_data.csv
+  uid_dic: dataset/Polyvore_519/polyvore_U_519_data/uid_dic  #user_indix dict
+  user_map: dataset/Polyvore_519/polyvore_U_519_data/user_map  #user id_index map
+  item_map: dataset/Polyvore_519/polyvore_U_519_data/item_map  #item id_index map, including bottom and top
+  img_map: dataset/Polyvore_519/polyvore_U_519_data/img_map    #all image name_id map
+  visual_features_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_visual_fea_tensor_new # top and bottom visual feature tensor
+  textural_feature_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_text_vector
+
+TRAIN:
+  arch: NiPCBPR
+  max_epoch: 80
+
+  workers: 2
+  batch_size: 64
+  hidden_dim: 512
+  text_feature_dim: 2400
+  visual_feature_dim: 2048
+  with_visual: True
+  with_text: True
+  train_gpu: [0]
+  lr: 0.001 # learning rate
+  wd: 0.0001 # weight decay
+  num_interaction: 2 # choose 2 bottoms that has been chose by the given top
+  patience: 5 # for early stop
+  with_Nor: True # Feature Scaling
+  b_PC: Ture # project bottom into personalization and conpatibility spaces separately
+  UC: False # user preference consistency branch
+  IC: False # item compatibility consistency branch
+  iPC: True # indirect personal compatibility branch
+  Cos: True # using cosine similairity calculate distance
+  weight_UC: 4
+  weight_IC: 4
+  weight_iPC: 4
+  weight_P: 0.1
+  his_select_t: True # using textual information to help to select historical bottoms
+  popupar_padding: True # using popular items to padding those historiacl interactions less than default number
+  repeated_interact: False # only contain one interaction for those bottoms chosed by same top/user more than twice for history selection
+  save_path: saved/Polyvore_519/NiPCBPR/
+
+Distributed:
+  dist_url: tcp://127.0.0.1:6789
+  dist_backend: 'nccl'
+  multiprocessing_distributed: True
+  world_size: 1
+  rank: 0
+
+TEST:
+  test_sub_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
+  test_batch_size: 64
+  test_gpu: [0]
+  has_prediction: False # has prediction already or not
+  model_path: saved/Polyvore_519/NiPCBPR/     # evaluation model path
+  save_folder: saved/Polyvore_519/NiPCBPR/result/   #test results save folder
