@@ -6,23 +6,8 @@ import torch
 
 from torch.utils.data import Dataset
 
-def Get_Data():
-    user_history = pd.read_csv(data_config['train_data'],header=None).astype('int')
-    user_history.columns=["user_idx", "top_idx", "pos_bottom_idx", "neg_bottom_idx"]
-    user_bottoms_dict = user_history.groupby("user_idx")["pos_bottom_idx"].agg(list).to_dict()
-    user_tops_dict = user_history.groupby("user_idx")["top_idx"].agg(list).to_dict()
-    top_bottoms_dict = user_history.groupby("top_idx")["pos_bottom_idx"].agg(list).to_dict()
-    popular_bottoms = user_history["pos_bottom_idx"].value_counts().to_dict()
-    popular_bottoms = list(popular_bottoms.keys())
 
-    popular_tops = user_history["top_idx"].value_counts().to_dict()
-    popular_tops = list(popular_tops.keys())
-
-    return user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops
-
-user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops = Get_Data()
-
-class Test_Data(Dataset):
+class Load_Data(Dataset):
     def __init__(self, test_data_ori, ub_his_dict, ut_his_dict, top_bottoms_dict, popular_bottoms,popular_tops, visual_features, text_features):
         self.test_data_ori = test_data_ori
         # self.his_lenth = his_lenth

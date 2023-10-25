@@ -9,11 +9,11 @@ DATA:
   img_map: dataset/Polyvore_519/polyvore_U_519_data/img_map    #all image name_id map
   visual_features_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_visual_fea_tensor_new # top and bottom visual feature tensor
   textural_feature_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_text_vector
-
+ 
 TRAIN:
   arch: NiPCBPR
   max_epoch: 80
-
+  print_freq: 1
   workers: 2
   batch_size: 64
   hidden_dim: 512
@@ -22,8 +22,10 @@ TRAIN:
   with_visual: True
   with_text: True
   train_gpu: [0]
-  lr: 0.001 # learning rate
+  base_lr: 0.001 # learning rate
   wd: 0.0001 # weight decay
+  power: 0.9
+  index_split: 5
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top
   patience: 5 # for early stop
   with_Nor: True # Feature Scaling
@@ -39,7 +41,7 @@ TRAIN:
   his_select_t: True # using textual information to help to select historical bottoms
   popupar_padding: True # using popular items to padding those historiacl interactions less than default number
   repeated_interact: False # only contain one interaction for those bottoms chosed by same top/user more than twice for history selection
-  save_path: saved/Polyvore_519/NiPCBPR/
+  save_path: saved/Polyvore_519/NiPCBPR
 
 Distributed:
   dist_url: tcp://127.0.0.1:6789
@@ -53,5 +55,5 @@ TEST:
   test_batch_size: 64
   test_gpu: [0]
   has_prediction: False # has prediction already or not
-  model_path: saved/Polyvore_519/NiPCBPR/     # evaluation model path
-  save_folder: saved/Polyvore_519/NiPCBPR/result/   #test results save folder
+  model_path: saved/Polyvore_519/NiPCBPR    # evaluation model path
+  save_folder: saved/Polyvore_519/NiPCBPR/result  #test results save folder
