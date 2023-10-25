@@ -11,7 +11,7 @@ import os
 import colorlog
 import re
 
-from utils.utils import get_local_time, ensure_dir
+from utils.utils_ori import get_local_time, ensure_dir
 from colorama import init
 
 log_colors_config = {

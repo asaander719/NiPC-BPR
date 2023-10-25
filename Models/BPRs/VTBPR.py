@@ -1,0 +1,47 @@
+import torch
+from torch.nn.init import uniform_
+from torch.nn import *
+import torch.nn as nn
+import torch.nn.functional as F
+from BPR import BPR
+
+
+class VTBPR(BPR):
+    def __init__(self, user_num, item_num, hidden_dim=hidden_dim, theta_text = True, theta_visual = True, with_Nor=True, cos=True):
+        super(VTBPR, self).__init__(user_num, item_num, hidden_dim=hidden_dim)
+        if theta_visual:
+            self.theta_user_visual = Embedding(user_num, self.hidden_dim)
+            init.uniform_(self.theta_user_visual.weight, 0, 0.01)
+        if theta_text:
+            self.theta_user_text = Embedding(user_num, self.hidden_dim)
+            init.uniform_(self.theta_user_text.weight, 0, 0.01)
+        self.with_Nor = with_Nor
+        self.cos = cos    
+
+         
+    def forward(self, users, items, visual_features=None, textural_features=None):
+        ui_latent = BPR.forward(self, users, items)
+    
+        if visual_features is not None:
+            theta_user_visual = self.theta_user_visual(users)
+            if self.with_Nor:
+                theta_user_visual = F.normalize(theta_user_visual,dim=0)
+
+            if self.cos:
+                ui_visual = F.cosine_similarity(theta_user_visual, visual_features, dim=-1)
+            else:
+                ui_visual = torch.sum(theta_user_visual * visual_features, dim=-1)
+
+            ui_latent += ui_visual
+        if textural_features is not None:
+            theta_user_text = self.theta_user_text(users)
+            if self.with_Nor:
+                theta_user_text = F.normalize(theta_user_text,dim=0)
+            if self.cos:
+                ui_text = F.cosine_similarity(theta_user_text, textural_features, dim=-1)
+            else:
+                ui_text = torch.sum(theta_user_text * textural_features, dim=-1)
+           
+            ui_latent += ui_text
+        
+        return ui_latent

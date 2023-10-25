@@ -1,5 +1,5 @@
 from utils.logger import init_logger, set_color
-from utils.utils import get_local_time, ensure_dir, get_model, get_trainer, \
+from utils.utils_ori import get_local_time, ensure_dir, get_model, get_trainer, \
     early_stopping, calculate_valid_score, dict2str, init_seed, get_tensorboard, get_gpu_usage
 from utils.enum_type import *
 from utils.argument_list import *

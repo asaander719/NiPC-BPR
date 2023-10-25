@@ -1,7 +1,6 @@
 import os
 import random
 import time
-import cv2
 import numpy as np
 import logging
 import argparse
@@ -17,11 +16,8 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter 
 
-from util import dataset, transform, config
+from util import dataset, config
 from util.util import AverageMeter, poly_learning_rate, intersectionAndUnionGPU, find_free_port
-
-cv2.ocl.setUseOpenCL(False)
-cv2.setNumThreads(0)
 
 
 def get_parser():
@@ -85,9 +81,9 @@ def main_worker(gpu, ngpus_per_node, argss):
             args.rank = args.rank * ngpus_per_node + gpu
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
 
-    if args.arch == 'psp':
-        from model.pspnet import PSPNet
-        model = PSPNet(layers=args.layers, classes=args.classes, zoom_factor=args.zoom_factor, criterion=criterion)
+    if args.arch == 'NiPCBPR':
+        from Models.BPRs.NiPCBPR import NiPCBPR
+        model = NiPCBPR(layers=args.layers, classes=args.classes, zoom_factor=args.zoom_factor, criterion=criterion)
         modules_ori = [model.layer0, model.layer1, model.layer2, model.layer3, model.layer4]
         modules_new = [model.ppm, model.cls, model.aux]
     elif args.arch == 'psa':

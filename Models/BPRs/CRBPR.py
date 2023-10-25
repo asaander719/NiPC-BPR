@@ -24,7 +24,8 @@ class GPBPR(Module):
         self.with_text = arg.with_text
         self.with_Nor = arg.with_Nor
         self.cos = arg.cos
-        self.iPC = arg.iPC
+        self.UC = arg.UC
+        self.IC = arg.IC
         #for compatibility space
         self.visual_nn = Sequential(
             Linear(arg.visual_feature_dim, self.hidden_dim),
@@ -51,7 +52,20 @@ class GPBPR(Module):
         self.p_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.p_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
-        #for iPC space
+        #for UC space
+        self.s_visual_nn = Sequential(
+            Linear(arg.visual_feature_dim, self.hidden_dim),
+            nn.Sigmoid())
+        self.s_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
+        self.s_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
+
+        self.s_text_nn = Sequential(
+            Linear(100 * arg.textcnn_layer, self.hidden_dim),
+            nn.Sigmoid())
+        self.s_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
+        self.s_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
+
+         #for iPC space
         self.iPC_visual_nn = Sequential(
             Linear(arg.visual_feature_dim, self.hidden_dim),
             nn.Sigmoid())
@@ -63,6 +77,21 @@ class GPBPR(Module):
             nn.Sigmoid())
         self.iPC_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.iPC_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
+
+         #for IC space
+        self.s3_visual_nn = Sequential(
+            Linear(arg.visual_feature_dim, self.hidden_dim),
+            nn.Sigmoid())
+        self.s3_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
+        self.s3_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
+
+        self.s3_text_nn = Sequential(
+            Linear(100 * arg.textcnn_layer, self.hidden_dim),
+            nn.Sigmoid())
+        self.s3_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
+        self.s3_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
+
+        self.sigmoid = nn.Sigmoid()
         
         if self.with_visual:
             self.visual_features = visual_features.to(arg.device)
@@ -113,24 +142,44 @@ class GPBPR(Module):
             else:
                 visual_ij = torch.sum(I_visual_latent * J_visual_latent, dim=-1)
                 visual_ik = torch.sum(I_visual_latent * K_visual_latent, dim=-1)
+            #add similarity 
+            if self.UC:    
+                vis_bhis = self.visual_features[bhis]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
+                vis_bhis = self.s_visual_nn(vis_bhis) #bs,3,512
+                # print(vis_bhis.size()) torch.Size([64, 3, 512])
+                vis_J_p = self.s_visual_nn(vis_J)
+                vis_K_p = self.s_visual_nn(vis_K)
+                b_his_visual = torch.mean(vis_bhis, dim=-2)  #bs, visual_feature_dim = 2048 #torch.Size([256, 512])
 
-            if self.iPC:
-                vis_tbhis = self.visual_features[tbhis] # bs, num_interact, 2048
-                vis_tbhis = self.iPC_visual_nn(vis_tbhis)  #bs,1,512
-                vis_J_s = self.iPC_visual_nn(vis_J)
-                vis_K_s = self.iPC_visual_nn(vis_K)
-                tb_his_visual = torch.mean(vis_tbhis, dim=-2)  #bs,512
                 if self.with_Nor:
-                    tb_his_visual = F.normalize(tb_his_visual,dim=0)
-                    vis_J_s = F.normalize(vis_J_s,dim=0)
-                    vis_K_s = F.normalize(vis_K_s,dim=0)
+                    b_his_visual = F.normalize(b_his_visual,dim=0)
+                    vis_J_p = F.normalize(vis_J_p,dim=0)
+                    vis_K_p = F.normalize(vis_K_p,dim=0)
+                if self.cos:
+                    Visual_BuJ = F.cosine_similarity(b_his_visual, vis_J_p, dim=-1)
+                    Visual_BuK = F.cosine_similarity(b_his_visual, vis_K_p, dim=-1)
+                else:
+                    Visual_BuJ = torch.sum(b_his_visual * vis_J_p, dim=-1)
+                    Visual_BuK = torch.sum(b_his_visual * vis_K_p, dim=-1)
+
+            if self.IC:    
+                vis_this = self.visual_features[this]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
+                vis_this = self.s3_visual_nn(vis_this) #bs,3,512
+                vis_J_c= self.s3_visual_nn(vis_J)
+                vis_K_c = self.s3_visual_nn(vis_K)
+                t_his_visual = torch.mean(vis_this, dim=-2)  #bs, visual_feature_dim = 2048 #torch.Size([256, 512])
+
+                if self.with_Nor:
+                    t_his_visual = F.normalize(t_his_visual,dim=0)
+                    vis_J_c = F.normalize(vis_J_c,dim=0)
+                    vis_K_c = F.normalize(vis_K_c,dim=0)
 
                 if self.cos:
-                    Visual_BtJ = F.cosine_similarity(tb_his_visual, vis_J_s, dim=-1)
-                    Visual_BtK = F.cosine_similarity(tb_his_visual, vis_K_s, dim=-1)
+                    Visual_TuJ = F.cosine_similarity(t_his_visual, vis_J_c, dim=-1)
+                    Visual_TuK = F.cosine_similarity(t_his_visual, vis_K_c, dim=-1)
                 else:
-                    Visual_BtJ = torch.sum(tb_his_visual * vis_J_s, dim=-1)
-                    Visual_BtK = torch.sum(tb_his_visual * vis_K_s, dim=-1) 
+                    Visual_TuJ = torch.sum(t_his_visual * vis_J_c, dim=-1)
+                    Visual_TuK = torch.sum(t_his_visual * vis_K_c, dim=-1)
 
         if self.with_text:
             text_I = self.text_embedding(self.text_features[Is]) #256,83,300
@@ -162,31 +211,48 @@ class GPBPR(Module):
             else:
                 text_ij = torch.sum(I_text_latent * J_text_latent, dim=-1)
                 text_ik = torch.sum(I_text_latent * K_text_latent, dim=-1)
-                
-            if self.iPC:
-                text_tbhis = self.text_embedding(self.text_features[tbhis]) #torch.size(256,3,83,300) last(55,3,83,300)
-                #T history 用来和bottom描述c空间的相似度，所以应该在c空间（进过mlp才对) b=a.reshape(5*3,2,2).unsqueeze(1).reshape(5,3,2,2)
-                text_tbhis_re = text_tbhis.reshape(bs * arg.num_interact,arg.max_sentence,arg.text_feature_dim)
-                tbhis_text_fea = self.textcnn(text_tbhis_re.unsqueeze(1)) #bs*3, 1 ,83,300 -> #torch.Size([768, 400])
-                  
-                tbhis_text_fea_latent = (self.iPC_text_nn(tbhis_text_fea)).reshape(bs, arg.num_interact, self.hidden_dim) #bs,3,hd = torch.Size([256, 3, 512])
-                tbhis_text_fea_latent_mean = torch.mean(tbhis_text_fea_latent, dim=-2) #bs,hd #torch.Size([256, 512])
+            #add similarity 
+            if self.UC:
+                text_bhis = self.text_embedding(self.text_features[bhis]) #torch.Size([64, 3, 83, 300])
 
-                text_J_s = self.iPC_text_nn(J_text_fea)
-                text_K_s = self.iPC_text_nn(K_text_fea)
+                bhis_text_fea = self.textcnn(text_bhis.reshape(bs * arg.num_his, arg.max_sentence, arg.text_feature_dim).unsqueeze(1))  #bs, 400(100*layers)
+                bhis_text_fea = self.s_text_nn(bhis_text_fea) #torch.Size([192, 512])
+                bhis_text_fea = bhis_text_fea.reshape(bs, arg.num_his, self.hidden_dim) #64, 3, 512
+                bhis_text_fea_mean = torch.mean(bhis_text_fea, dim=-2) #torch.Size([bs, 512])
 
+                text_J_p = self.s_text_nn(J_text_fea)
+                text_K_p = self.s_text_nn(K_text_fea)
                 if self.with_Nor:
-                    tbhis_text_fea_latent_mean = F.normalize(tbhis_text_fea_latent_mean,dim=0)
-                    text_J_s = F.normalize(text_J_s,dim=0)
-                    text_K_s = F.normalize(text_K_s,dim=0)
-
+                    bhis_text_fea_mean = F.normalize(bhis_text_fea_mean,dim=0)
+                    text_J_p = F.normalize(text_J_p,dim=0)
+                    text_K_p = F.normalize(text_K_p,dim=0)
                 if self.cos:
-                    text_BtJ = F.cosine_similarity(tbhis_text_fea_latent_mean, text_J_s, dim=-1)
-                    text_BtK = F.cosine_similarity(tbhis_text_fea_latent_mean, text_K_s, dim=-1)
+                    text_BuJ = F.cosine_similarity(bhis_text_fea_mean, text_J_p, dim=-1)
+                    text_BuK = F.cosine_similarity(bhis_text_fea_mean, text_K_p, dim=-1)
                 else:
-                    text_BtJ = torch.sum(tbhis_text_fea_latent_mean * text_J_s, dim=-1)
-                    text_BtK = torch.sum(tbhis_text_fea_latent_mean * text_K_s, dim=-1)
- 
+                    text_BuJ = torch.sum(bhis_text_fea_mean * text_J_p, dim=-1)
+                    text_BuK = torch.sum(bhis_text_fea_mean * text_K_p, dim=-1)
+
+            if self.IC:
+                text_this = self.text_embedding(self.text_features[this]) #torch.Size([64, 3, 83, 300])
+
+                this_text_fea = self.textcnn(text_this.reshape(bs * arg.num_his, arg.max_sentence, arg.text_feature_dim).unsqueeze(1))  #bs, 400(100*layers)
+                this_text_fea = self.s3_text_nn(this_text_fea) #torch.Size([192, 512])
+                this_text_fea = this_text_fea.reshape(bs, arg.num_his, self.hidden_dim) #64, 3, 512
+                this_text_fea_mean = torch.mean(this_text_fea, dim=-2) #torch.Size([bs, 512])
+
+                text_J_c = self.s3_text_nn(J_text_fea)
+                text_K_c = self.s3_text_nn(K_text_fea)
+                if self.with_Nor:
+                    this_text_fea_mean = F.normalize(this_text_fea_mean,dim=0)
+                    text_J_c = F.normalize(text_J_c,dim=0)
+                    text_K_c = F.normalize(text_K_c,dim=0)
+                if self.cos:
+                    text_TuJ = F.cosine_similarity(this_text_fea_mean, text_J_c, dim=-1)
+                    text_TuK = F.cosine_similarity(this_text_fea_mean, text_K_c, dim=-1)
+                else:
+                    text_TuJ = torch.sum(this_text_fea_mean * text_J_c, dim=-1)
+                    text_TuK = torch.sum(this_text_fea_mean * text_K_c, dim=-1) 
 
         if self.with_visual and self.with_text:
             if arg.b_PC:
@@ -199,13 +265,19 @@ class GPBPR(Module):
             p_ij = 0.5 * (visual_ij + text_ij)
             p_ik = 0.5 * (visual_ik + text_ik)
 
-            pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk) 
+            pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
-            if self.iPC:
-                S_BtJ = arg.iPC_w * (arg.iPC_v_w * Visual_BtJ + (1-arg.iPC_v_w) * text_BtJ)
-                S_BtK = arg.iPC_w * (arg.iPC_v_w * Visual_BtK + (1-arg.iPC_v_w) * text_BtK)
+            if self.UC:
+                C_BuJ = arg.UC_w  * (arg.UC_v_w  * Visual_BuJ + (1-arg.UC_v_w) * text_BuJ)
+                C_BuK = arg.UC_w  * (arg.UC_v_w  * Visual_BuK + (1-arg.UC_v_w) * text_BuK)
 
-                pred = pred + S_BtJ - S_BtK
+                pred = pred + C_BuJ - C_BuK
+
+            if self.IC:
+                C_TuJ = arg.IC_w * (arg.IC_v_w * Visual_TuJ + (1-arg.IC_v_w) * text_TuJ)
+                C_TuK = arg.IC_w * (arg.IC_v_w * Visual_TuK + (1-arg.IC_v_w) * text_TuK)
+
+                pred = pred + C_TuJ - C_TuK   
 
         if self.with_visual and not self.with_text:
             if arg.b_PC:
@@ -220,11 +292,17 @@ class GPBPR(Module):
 
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
-            if self.iPC:
-                S_BtJ = arg.iPC_w * Visual_BtJ 
-                S_BtK = arg.iPC_w * Visual_BtK 
+            if self.UC:
+                C_BuJ = arg.UC_w * Visual_BuJ 
+                C_BuK = arg.UC_w * Visual_BuK 
 
-                pred = pred + S_BtJ - S_BtK
+                pred = pred + C_BuJ - C_BuK
+
+            if self.IC:
+                C_TuJ = arg.IC_w * Visual_TuJ 
+                C_TuK = arg.IC_w * Visual_TuK 
+
+                pred = pred + C_TuJ - C_TuK   
         
         if not self.with_visual and self.with_text:
             if arg.b_PC:
@@ -239,10 +317,16 @@ class GPBPR(Module):
 
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
-            if self.iPC:
-                S_BtJ = arg.iPC_w * text_BtJ
-                S_BtK = arg.iPC_w * text_BtK
+            if self.UC:
+                C_BuJ = arg.UC_w * text_BuJ
+                C_BuK = arg.UC_w * text_BuK
 
-                pred = pred + S_BtJ - S_BtK
+                pred = pred + C_BuJ - C_BuK
+
+            if self.IC:
+                C_TuJ = arg.IC_w * text_TuJ
+                C_TuK = arg.IC_w * text_TuK
+
+                pred = pred + C_TuJ - C_TuK   
    
         return pred        

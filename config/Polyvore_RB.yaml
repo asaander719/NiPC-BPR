@@ -32,9 +32,9 @@ TRAIN:
   IC: False # item compatibility consistency branch
   iPC: True # indirect personal compatibility branch
   Cos: True # using cosine similairity calculate distance
-  weight_UC: 4
-  weight_IC: 4
-  weight_iPC: 4
+  UC_w: 4
+  IC_w: 4
+  iPC_w: 4
   weight_P: 0.1
   his_select_t: True # using textual information to help to select historical bottoms
   popupar_padding: True # using popular items to padding those historiacl interactions less than default number

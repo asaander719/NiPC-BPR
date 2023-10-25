@@ -8,7 +8,7 @@ from functools import partial
 
 import numpy as np
 
-from utils.utils import dict2str
+from utils.utils_ori import dict2str
 
 
 def _recursiveFindNodes(root, node_type='switch'):
