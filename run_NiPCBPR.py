@@ -13,14 +13,14 @@ import torch.optim
 import torch.utils.data
 import torch.multiprocessing as mp
 import torch.distributed as dist
-from torch.utils.tensorboard import SummaryWriter 
+from torch.utils.tensorboard import SummaryWriter
 from tool.util import AverageMeter, poly_learning_rate, find_free_port
 from trainer.loader_iqon import Load_Data
 
 def get_parser(): 
     parser = argparse.ArgumentParser(description='PyTorch Semantic Segmentation')
-    parser.add_argument('--config', type=str, default='config/voc2012/voc2012_pspnet18.yaml', help='config file')
-    parser.add_argument('opts', help='see config/voc2012/voc2012_pspnet18.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('--config', type=str, default='config/Polyvore_RB.yaml', help='config file')
+    parser.add_argument('opts', help='see config/Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)
@@ -120,9 +120,9 @@ def reindex_features(visual_features_ori, text_features_ori, item_map, conf):
         if text_features_ori is not None:
             text_fea = text_features_ori[item]
             text_features.append(text_fea)
-    torch.save(torch.stack(visual_features, dim=0), conf["visual_features_tensor"])
+    torch.save(torch.stack(visual_features, dim=0), args.visual_features_tensor)
     if text_features_ori is not None:
-        torch.save(torch.stack(text_features, dim=0), conf["textural_idx_tensor"])
+        torch.save(torch.stack(text_features, dim=0), args.textural_features_tensor)
     return visual_features, text_features
 
 # def training(model, train_data_loader, device, optimizer):
@@ -171,19 +171,20 @@ def train(train_loader, model, optimizer, epoch):
         # output = model.fit(aBatch[0], train=True, weight=False)
         # input = input.cuda(non_blocking=True)
         aBatch = [x.cuda(non_blocking=True) for x in aBatch]
-        output = model.forward(aBatch, train=True)  
-        if not args.multiprocessing_distributed: 
-            loss = (-logsigmoid(output)).sum()    
+        output = model.forward(aBatch, train=True)         
+        loss = (-logsigmoid(output)).sum() 
+        if not args.multiprocessing_distributed:
+            loss = torch.mean(loss)   
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         # i += 1
-        n = len(aBatch[0])
+        n = len(aBatch[0]) #input.size(0)
         if args.multiprocessing_distributed:
             loss = loss.detach() * n 
             # count = target.new_tensor([n], dtype=torch.long)
             dist.all_reduce(loss)#, dist.all_reduce(count)
-            n = count.item()
+            # n = count.item()
             loss = loss / n
 
         loss_meter.update(loss.item(), n)
@@ -226,14 +227,26 @@ def validate(model, testloader, t_len):#,val_loader, model, criterion):
 
     model.eval()
     end = time.time()
-    for i, (input, target) in enumerate(val_loader):
+    pos = 0
+    for i, aBatch in enumerate(val_loader):
         data_time.update(time.time() - end)
-        input = input.cuda(non_blocking=True)
-        target = target.cuda(non_blocking=True)
-        output = model(input)
+        # aBatch = [x.to(device) for x in aBatch]
+        # output = model.fit(aBatch[0], train=True, weight=False)
+        # input = input.cuda(non_blocking=True)
+        aBatch = [x.cuda(non_blocking=True) for x in aBatch]
+        output = model.forward(aBatch, train=False)          
         pos += float(torch.sum(output.ge(0)))
+    pos_meter.update(pos)
+    AUC = pos/t_len
     # return pos/len(testloader)
-    return pos/t_len, pos
+    batch_time.update(time.time() - end)
+    end = time.time()
+    if ((i + 1) % args.print_freq == 0) and main_process():
+        logger.info('Test: [{}/{}] '
+                    'Accuracy {accuracy:.4f}.'.format(i + 1, len(val_loader),
+                                                        accuracy=AUC))
+    return AUC, pos
+
 
 def Get_Data():
     user_history = pd.read_csv(data_config['train_data'],header=None).astype('int')
@@ -261,11 +274,11 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
             args.rank = args.rank * ngpus_per_node + gpu
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
 
-    criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label)
+    # criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label)
     if args.arch == 'NiPCBPR':#定义模型结构
         from Models.BPRs.NiPCBPR import NiPCBPR
-        model = NiPCBPR(arg, embedding_weight, visual_features_tensor, text_features_tensor)
-    optimizer = Adam([{'params': model.parameters(),'lr': args.lr, "weight_decay": args.wd}])
+        model = NiPCBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+    optimizer = Adam([{'params': model.parameters(),'lr': args.base_lr, "weight_decay": args.wd}])
     #     model = PSPNet(layers=args.layers, classes=args.classes, zoom_factor=args.zoom_factor, criterion=criterion)
     #     modules_ori = [model.layer0, model.layer1, model.layer2, model.layer3, model.layer4]
     #     modules_new = [model.ppm, model.cls, model.aux]
@@ -351,11 +364,13 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
     item_map = json.load(open(args.item_map))
   
     args.user_num = len(user_map)
-    args.item_num = len(item_map)  
+    args.item_num = len(item_map) 
+
+    user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops = Get_Data() 
 
     train_data_ori = load_csv_data(args.train_data)
     train_data_ori  = torch.LongTensor(train_data_ori)
-    train_data = Load_Data(train_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+    train_data = Load_Data(args, train_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
     # train_loader = DataLoader(train_data, batch_size=conf["batch_size"], shuffle=True, drop_last=True)
 
     # train_data = dataset.SemData(split='train', data_root=args.data_root, data_list=args.train_list)
@@ -365,23 +380,31 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
         train_sampler = None
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=(train_sampler is None), num_workers=args.workers, pin_memory=True, sampler=train_sampler, drop_last=True)
     if args.evaluate:
-        val_data = dataset.SemData(split='val', data_root=args.data_root, data_list=args.val_list, transform=val_transform)
+        valid_data_ori = load_csv_data(args.valid_data)
+        valid_data_ori  = torch.LongTensor(valid_data_ori)
+        valid_data = Load_Data(args, valid_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+        # valid_loader = DataLoader(valid_data, batch_size=conf["batch_size"], shuffle=False)
+        v_len = len(valid_data_ori)
+        # val_data = dataset.SemData(split='val', data_root=args.data_root, data_list=args.val_list, transform=val_transform)
         if args.distributed:
-            val_sampler = torch.utils.data.distributed.DistributedSampler(val_data)
+            val_sampler = torch.utils.data.distributed.DistributedSampler(valid_data)
         else:
             val_sampler = None
-        val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size_val, shuffle=False, num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+        val_loader = torch.utils.data.DataLoader(valid_data, batch_size=args.batch_size_val, shuffle=False, num_workers=args.workers, pin_memory=True, sampler=val_sampler)
+    
+    early_stopping = EarlyStopping(patience=args.patience, verbose=True)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')#动态调整学习率
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.97 ** epoch) 
 
     for epoch in range(args.start_epoch, args.epochs):
         epoch_log = epoch + 1
         if args.distributed:
             train_sampler.set_epoch(epoch)
-        loss_train, mIoU_train, mAcc_train, allAcc_train = train(train_loader, model, optimizer, epoch)
+        loss_train = train(train_loader, model, optimizer, epoch)
+        scheduler.step()
+
         if main_process():
             writer.add_scalar('loss_train', loss_train, epoch_log)
-            writer.add_scalar('mIoU_train', mIoU_train, epoch_log)
-            writer.add_scalar('mAcc_train', mAcc_train, epoch_log)
-            writer.add_scalar('allAcc_train', allAcc_train, epoch_log)
 
         if (epoch_log % args.save_freq == 0) and main_process():
             filename = args.save_path + '/train_epoch_' + str(epoch_log) + '.pth'
@@ -391,15 +414,17 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
                 deletename = args.save_path + '/train_epoch_' + str(epoch_log - args.save_freq * 2) + '.pth'
                 os.remove(deletename)
         if args.evaluate:
-            loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion)
+            AUC, pos = validate(model, val_loader, v_len)
             if main_process():
-                writer.add_scalar('loss_val', loss_val, epoch_log)
-                writer.add_scalar('mIoU_val', mIoU_val, epoch_log)
-                writer.add_scalar('mAcc_val', mAcc_val, epoch_log)
-                writer.add_scalar('allAcc_val', allAcc_val, epoch_log)
+                writer.add_scalar('AUC', AUC, epoch_log)
+                
+        early_stopping(valid_auc, gpbpr)
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break 
 
-def worker_init_fn(worker_id):
-    random.seed(args.manual_seed + worker_id)
+# def worker_init_fn(worker_id):
+#     random.seed(args.manual_seed + worker_id)
 
 
 def main_process():
@@ -427,5 +452,4 @@ def main():
 
 
 if __name__ == '__main__':
-    user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops = Get_Data()
     main()

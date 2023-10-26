@@ -44,7 +44,7 @@ TRAIN:
   save_path: saved/Polyvore_519/NiPCBPR
 
 Distributed:
-  dist_url: tcp://127.0.0.1:6789
+  dist_url: tcp://158.132.123.124:6080
   dist_backend: 'nccl'
   multiprocessing_distributed: True
   world_size: 1
