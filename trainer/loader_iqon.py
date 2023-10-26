@@ -51,7 +51,7 @@ class Load_Data(Dataset):
             ub_his = []
             # if self.args.popular_padding"]:
             for i in range(self.args.num_his):
-                ub_his.append(popular_bottoms[i])#用popular item代替
+                ub_his.append(self.popular_bottoms[i])#用popular item代替
             # else:
             #     for i in range(self.args.num_his"]):
             #         ub_his.append(-1)
@@ -95,7 +95,7 @@ class Load_Data(Dataset):
             ut_his = []
             if self.args.popular_padding:
                 for i in range(self.args.num_his):
-                    ut_his.append(popular_tops[i])#用popular item代替
+                    ut_his.append(self.popular_tops[i])#用popular item代替
             else:
                 for i in range(self.args.num_his):
                     ut_his.append(-1)
@@ -145,7 +145,7 @@ class Load_Data(Dataset):
                 tb_his = []  
                 # if self.args.popular_padding"]: 
                 for i in range(self.args.num_interact):
-                    tb_his.append(popular_bottoms[i])#用popular item代替
+                    tb_his.append(self.popular_bottoms[i])#用popular item代替
                 # else:
                 #     for i in range(self.args.num_interact"]):
                 #         tb_his.append(-1) 
@@ -166,6 +166,6 @@ class Load_Data(Dataset):
             tb_his = []  
             for i in range(self.args.num_interact):
                 # tb_his.append(-1)
-                tb_his.append(popular_bottoms[i])#用popular item代替   
+                tb_his.append(self.popular_bottoms[i])#用popular item代替   
         
         return user_idx.long(), top_idx.long(), pos_bottom_idx.long(), neg_bottom_idx.long(), torch.LongTensor(ub_his), torch.LongTensor(ut_his),torch.LongTensor(tb_his)

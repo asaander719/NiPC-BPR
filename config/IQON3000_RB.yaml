@@ -14,9 +14,10 @@ DATA:
 
 TRAIN:
   arch: NiPCBPR
-  max_epoch: 80
+  epochs: 80
+  start_epoch: 0
   max_sentence: 83
-
+  print_freq: 1
   workers: 2
   batch_size: 64
   hidden_dim: 512
@@ -25,8 +26,8 @@ TRAIN:
   textcnn_layer: 4
   with_visual: True
   with_text: True
-  train_gpu: [0]
-  lr: 0.001 # learning rate
+  train_gpu: [5]
+  base_lr: 0.001 # learning rate
   wd: 0.00001 # weight decay
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top
   patience: 5 # for early stop
@@ -35,15 +36,23 @@ TRAIN:
   UC: False # user preference consistency branch
   IC: False # item compatibility consistency branch
   iPC: True # indirect personal compatibility branch
-  Cos: True # using cosine similairity calculate distance
+  cos: True # using cosine similairity calculate distance
+  weight:  # path to initial weight (default: none)
+  resume:  # 
   weight_UC: 4
   weight_IC: 4
-  weight_iPC: 4
   weight_P: 0.3
-  his_select_t: True # using textual information to help to select historical bottoms
+  iPC_w: 3
+  his_select_t: False # using textual information to help to select historical bottoms
   popupar_padding: True # using popular items to padding those historiacl interactions less than default number
   repeated_interact: False # only contain one interaction for those bottoms chosed by same top/user more than twice for history selection
   save_path: saved/IQON3000/NiPCBPR
+  evaluate: True
+  batch_size_val: 64
+  start_epoch: 0
+  num_his: 2
+  num_interact: 2
+  iPC_v_w: 0.5
 
 Distributed:
   dist_url: tcp://127.0.0.1:6789
@@ -55,7 +64,7 @@ Distributed:
 TEST:
   test_sub_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
   test_batch_size: 64
-  test_gpu: [0]
+  test_gpu: [5]
   has_prediction: False # has prediction already or not
   model_path: saved/Polyvore_519/NiPCBPR/     # evaluation model path
   save_folder: saved/Polyvore_519/NiPCBPR/result/   #test results save folder

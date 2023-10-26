@@ -2,10 +2,12 @@ import os
 import random
 import time
 import numpy as np
+import json
 import logging
 import argparse
 import torch
 import torch.backends.cudnn as cudnn
+from torch.nn.functional import logsigmoid
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.parallel
@@ -14,13 +16,24 @@ import torch.utils.data
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter
+from utils import config
 from tool.util import AverageMeter, poly_learning_rate, find_free_port
 from trainer.loader_iqon import Load_Data
+import csv
+from torch.optim import Adam
+from sys import argv
+import json
+import pdb
+from torch.nn import *
+import random
+from collections import defaultdict
+from tqdm import tqdm
+import pandas as pd
 
 def get_parser(): 
     parser = argparse.ArgumentParser(description='PyTorch Semantic Segmentation')
-    parser.add_argument('--config', type=str, default='config/Polyvore_RB.yaml', help='config file')
-    parser.add_argument('opts', help='see config/Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('--config', type=str, default='config/IQON3000_RB.yaml', help='config file')
+    parser.add_argument('opts', help='see config/IQON3000_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)
@@ -96,8 +109,8 @@ def load_csv_data(train_data_path):
             result.append(t)
     return result
 
-def load_embedding_weight():
-    jap2vec = torch.load(args.textural_embedding_matrix)
+def load_embedding_weight(textural_embedding_matrix):
+    jap2vec = torch.load(textural_embedding_matrix)
     embeding_weight = []
     for jap, vec in jap2vec.items():
         embeding_weight.append(vec.tolist())
@@ -105,7 +118,7 @@ def load_embedding_weight():
     embedding_weight = torch.tensor(embeding_weight).cuda()
     return embedding_weight
 
-def reindex_features(visual_features_ori, text_features_ori, item_map, conf):
+def reindex_features(visual_features_ori, text_features_ori, item_map, args):
     visual_features = []
     text_features = []
     id_item_map = {}
@@ -164,30 +177,34 @@ def train(train_loader, model, optimizer, epoch):
 
     model.train()
     end = time.time()
-    max_iter = args.max_epoch * len(train_loader)
+    max_iter = args.epochs * len(train_loader)
+    loss_scalar = 0.
     for i, aBatch in enumerate(train_loader):
         data_time.update(time.time() - end)
         # aBatch = [x.to(device) for x in aBatch]
         # output = model.fit(aBatch[0], train=True, weight=False)
         # input = input.cuda(non_blocking=True)
-        aBatch = [x.cuda(non_blocking=True) for x in aBatch]
+        aBatch = [x.cuda() for x in aBatch]
         output = model.forward(aBatch, train=True)         
         loss = (-logsigmoid(output)).sum() 
+        i += 1
         if not args.multiprocessing_distributed:
             loss = torch.mean(loss)   
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        # i += 1
-        n = len(aBatch[0]) #input.size(0)
+        loss_scalar += loss.detach().cpu()
+        
         if args.multiprocessing_distributed:
+            n = len(aBatch[0]) #input.size(0)
             loss = loss.detach() * n 
             # count = target.new_tensor([n], dtype=torch.long)
             dist.all_reduce(loss)#, dist.all_reduce(count)
             # n = count.item()
             loss = loss / n
 
-        loss_meter.update(loss.item(), n)
+            loss_meter.update(loss.item(), n)
+        
         batch_time.update(time.time() - end)
         end = time.time()
 
@@ -212,10 +229,10 @@ def train(train_loader, model, optimizer, epoch):
                                                           batch_time=batch_time,
                                                           data_time=data_time,
                                                           remain_time=remain_time,
-                                                          loss_meter=loss_meter))
+                                                          loss_meter=loss_scalar/i))
                                                           
         if main_process():
-            writer.add_scalar('loss_train_batch', loss_meter.val, current_iter)
+            writer.add_scalar('loss_train_batch', loss_scalar/i, current_iter)
     return loss_meter.avg
 
 def validate(model, testloader, t_len):#,val_loader, model, criterion):
@@ -248,8 +265,8 @@ def validate(model, testloader, t_len):#,val_loader, model, criterion):
     return AUC, pos
 
 
-def Get_Data():
-    user_history = pd.read_csv(data_config['train_data'],header=None).astype('int')
+def Get_Data(train_data_file):
+    user_history = pd.read_csv(train_data_file, header=None).astype('int')
     user_history.columns=["user_idx", "top_idx", "pos_bottom_idx", "neg_bottom_idx"]
     user_bottoms_dict = user_history.groupby("user_idx")["pos_bottom_idx"].agg(list).to_dict()
     user_tops_dict = user_history.groupby("user_idx")["top_idx"].agg(list).to_dict()
@@ -267,6 +284,28 @@ def Get_Data():
 def main_worker(gpu, ngpus_per_node, argss):#多分布式
     global args
     args = argss
+    visual_features_tensor = torch.load(args.visual_features_tensor, map_location= lambda a,b:a.cpu())#torch.Size([142737, 2048])
+    # v_zeros = torch.zeros(visual_features_tensor.size(-1)).unsqueeze(0)
+    # visual_features_tensor = torch.cat((visual_features_tensor,v_zeros),0)#torch.Size([142738, 2048])
+
+    if args.with_text:
+        text_features_tensor = torch.load(args.textural_features_tensor, map_location= lambda a,b:a.cpu())#torch.Size([142737, 83])
+        embedding_weight = load_embedding_weight(args.textural_embedding_matrix)#torch.Size([54276, 300])
+
+        # t_zeros = torch.zeros(text_features_tensor.size(-1)).unsqueeze(0)
+        # text_features_tensor = torch.cat((text_features_tensor,t_zeros),0)#torch.Size([142738, 83])
+        # e_zeros = torch.zeros(embedding_weight.size(-1)).unsqueeze(0).to(conf["device"])
+        # embedding_weight = torch.cat((embedding_weight, e_zeros), 0).to(conf["device"])#torch.Size([54277, 300])
+    
+    else:
+        text_features_tensor = None
+        embedding_weight = None
+
+    user_map = json.load(open(args.user_map))
+    item_map = json.load(open(args.item_map))
+  
+    args.user_num = len(user_map)
+    args.item_num = len(item_map)
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
             args.rank = int(os.environ["RANK"])
@@ -341,32 +380,9 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
                 logger.info("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
         else:
             if main_process():
-                logger.info("=> no checkpoint found at '{}'".format(args.resume))
+                logger.info("=> no checkpoint found at '{}'".format(args.resume)) 
 
-    visual_features_tensor = torch.load(args.visual_features_tensor, map_location= lambda a,b:a.cpu())#torch.Size([142737, 2048])
-    # v_zeros = torch.zeros(visual_features_tensor.size(-1)).unsqueeze(0)
-    # visual_features_tensor = torch.cat((visual_features_tensor,v_zeros),0)#torch.Size([142738, 2048])
-
-    if args.with_text:
-        text_features_tensor = torch.load(args.textural_feature_tensor, map_location= lambda a,b:a.cpu())#torch.Size([142737, 83])
-        embedding_weight = load_embedding_weight()#torch.Size([54276, 300])
-
-        # t_zeros = torch.zeros(text_features_tensor.size(-1)).unsqueeze(0)
-        # text_features_tensor = torch.cat((text_features_tensor,t_zeros),0)#torch.Size([142738, 83])
-        # e_zeros = torch.zeros(embedding_weight.size(-1)).unsqueeze(0).to(conf["device"])
-        # embedding_weight = torch.cat((embedding_weight, e_zeros), 0).to(conf["device"])#torch.Size([54277, 300])
-    
-    else:
-        text_features_tensor = None
-        embedding_weight = None
-
-    user_map = json.load(open(args.user_map))
-    item_map = json.load(open(args.item_map))
-  
-    args.user_num = len(user_map)
-    args.item_num = len(item_map) 
-
-    user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops = Get_Data() 
+    user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops = Get_Data(args.train_data) 
 
     train_data_ori = load_csv_data(args.train_data)
     train_data_ori  = torch.LongTensor(train_data_ori)
@@ -397,6 +413,7 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.97 ** epoch) 
 
     for epoch in range(args.start_epoch, args.epochs):
+        model.train()
         epoch_log = epoch + 1
         if args.distributed:
             train_sampler.set_epoch(epoch)

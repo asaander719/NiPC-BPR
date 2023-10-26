@@ -16,14 +16,14 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter 
 
-from util import dataset, config
-from util.util import AverageMeter, poly_learning_rate, intersectionAndUnionGPU, find_free_port
+from utils import config
+from tool.util import AverageMeter, poly_learning_rate, find_free_port
 
 
 def get_parser():
     parser = argparse.ArgumentParser(description='PyTorch Semantic Segmentation')
-    parser.add_argument('--config', type=str, default='config/Polyvore_RB.yaml', help='config file')
-    parser.add_argument('opts', help='see config/Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('--config', type=str, default='config/IQON3000_RB.yaml', help='config file')
+    parser.add_argument('opts', help='see config/IQON3000_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)

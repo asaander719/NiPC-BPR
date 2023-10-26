@@ -3,11 +3,11 @@ from torch.nn.init import uniform_
 from torch.nn import *
 import torch.nn as nn
 import torch.nn.functional as F
-from BPR import BPR
+from Models.BPRs.BPR import BPR
 
 
 class VTBPR(BPR):
-    def __init__(self, user_num, item_num, hidden_dim=hidden_dim, theta_text = True, theta_visual = True, with_Nor=True, cos=True):
+    def __init__(self, user_num, item_num, hidden_dim=512, theta_text = True, theta_visual = True, with_Nor=True, cos=True):
         super(VTBPR, self).__init__(user_num, item_num, hidden_dim=hidden_dim)
         if theta_visual:
             self.theta_user_visual = Embedding(user_num, self.hidden_dim)

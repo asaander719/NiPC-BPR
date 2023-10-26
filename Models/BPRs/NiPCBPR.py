@@ -8,76 +8,76 @@ import pandas as pd
 import numpy as np
 import torch.nn.functional as F
 from utils.utils import get_parser
-from BPR import BPR
-from VTBPR import VTBPR
-from TextCNN import TextCNN
+from Models.BPRs.BPR import BPR
+from Models.BPRs.VTBPR import VTBPR
+from Models.BPRs.TextCNN import TextCNN
 
-class GPBPR(Module):
-    def __init__(self, arg, embedding_weight, visual_features, text_features):        
-        super(GPBPR, self) .__init__()
-        self.arg = arg
-        self.weight_P = arg.weight_P
-        self.hidden_dim = arg.hidden_dim
-        self.user_num = arg.user_num
-        self.item_num = arg.item_num
-        self.with_visual = arg.with_visual
-        self.with_text = arg.with_text
-        self.with_Nor = arg.with_Nor
-        self.cos = arg.cos
-        self.iPC = arg.iPC
+class NiPCBPR(Module):
+    def __init__(self, args, embedding_weight, visual_features, text_features):        
+        super(NiPCBPR, self) .__init__()
+        self.args = args
+        self.weight_P = args.weight_P
+        self.hidden_dim = args.hidden_dim
+        self.user_num = args.user_num
+        self.item_num = args.item_num
+        self.with_visual = args.with_visual
+        self.with_text = args.with_text
+        self.with_Nor = args.with_Nor
+        self.cos = args.cos
+        self.iPC = args.iPC
         #for compatibility space
         self.visual_nn = Sequential(
-            Linear(arg.visual_feature_dim, self.hidden_dim),
+            Linear(args.visual_feature_dim, self.hidden_dim),
             nn.Sigmoid())
         self.visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         self.text_nn = Sequential(
-            Linear(100 * arg.textcnn_layer, self.hidden_dim),
+            Linear(100 * args.textcnn_layer, self.hidden_dim),
             nn.Sigmoid()) 
         self.text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         #for personalization space
         self.p_visual_nn = Sequential(
-            Linear(arg.visual_feature_dim, self.hidden_dim),
+            Linear(args.visual_feature_dim, self.hidden_dim),
             nn.Sigmoid())
         self.p_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.p_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         self.p_text_nn = Sequential(
-            Linear(100 * arg.textcnn_layer, self.hidden_dim),
+            Linear(100 * args.textcnn_layer, self.hidden_dim),
             nn.Sigmoid())
         self.p_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.p_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         #for iPC space
         self.iPC_visual_nn = Sequential(
-            Linear(arg.visual_feature_dim, self.hidden_dim),
+            Linear(args.visual_feature_dim, self.hidden_dim),
             nn.Sigmoid())
         self.iPC_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.iPC_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         self.iPC_text_nn = Sequential(
-            Linear(100 * arg.textcnn_layer, self.hidden_dim),
+            Linear(100 * args.textcnn_layer, self.hidden_dim),
             nn.Sigmoid())
         self.iPC_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.iPC_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
         
         if self.with_visual:
-            self.visual_features = visual_features.to(arg.device)
+            self.visual_features = visual_features.cuda()
         if self.with_text:
-            self.max_sentense_length = arg.max_sentence
-            self.text_features = text_features.to(arg.device)
+            self.max_sentense_length = args.max_sentence
+            self.text_features = text_features.cuda()
             self.text_embedding = Embedding.from_pretrained(embedding_weight, freeze=False)
-            self.textcnn = TextCNN(arg.textcnn_layer, sentence_size=(arg.max_sentence, arg.text_feature_dim), output_size=self.hidden_dim)
+            self.textcnn = TextCNN(args.textcnn_layer, sentence_size=(args.max_sentence, args.text_feature_dim), output_size=self.hidden_dim)
 
         self.vtbpr = VTBPR(self.user_num, self.item_num, hidden_dim=self.hidden_dim, 
             theta_text=self.with_text, theta_visual=self.with_visual, with_Nor=True, cos=True)
         print('Module already prepared, {} users, {} items'.format(self.user_num, self.item_num))
         self.bpr = BPR(self.user_num, self.item_num)
          
-    def forward(self, batch, train, **args):
+    def forward(self, batch, train, **args): #**args,
         Us = batch[0] #bs
         Is = batch[1]
         Js = batch[2]
@@ -166,10 +166,10 @@ class GPBPR(Module):
             if self.iPC:
                 text_tbhis = self.text_embedding(self.text_features[tbhis]) #torch.size(256,3,83,300) last(55,3,83,300)
                 #T history 用来和bottom描述c空间的相似度，所以应该在c空间（进过mlp才对) b=a.reshape(5*3,2,2).unsqueeze(1).reshape(5,3,2,2)
-                text_tbhis_re = text_tbhis.reshape(bs * arg.num_interact,arg.max_sentence,arg.text_feature_dim)
+                text_tbhis_re = text_tbhis.reshape(bs * self.args.num_interact,self.args.max_sentence,self.args.text_feature_dim)
                 tbhis_text_fea = self.textcnn(text_tbhis_re.unsqueeze(1)) #bs*3, 1 ,83,300 -> #torch.Size([768, 400])
                   
-                tbhis_text_fea_latent = (self.iPC_text_nn(tbhis_text_fea)).reshape(bs, arg.num_interact, self.hidden_dim) #bs,3,hd = torch.Size([256, 3, 512])
+                tbhis_text_fea_latent = (self.iPC_text_nn(tbhis_text_fea)).reshape(bs, self.args.num_interact, self.hidden_dim) #bs,3,hd = torch.Size([256, 3, 512])
                 tbhis_text_fea_latent_mean = torch.mean(tbhis_text_fea_latent, dim=-2) #bs,hd #torch.Size([256, 512])
 
                 text_J_s = self.iPC_text_nn(J_text_fea)
@@ -189,7 +189,7 @@ class GPBPR(Module):
  
 
         if self.with_visual and self.with_text:
-            if arg.b_PC:
+            if self.args.b_PC:
                 cuj = self.vtbpr(Us, Js, J_visual_latent_p, J_text_latent_p) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, K_visual_latent_p, K_text_latent_p)
             else:
@@ -202,13 +202,13 @@ class GPBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk) 
 
             if self.iPC:
-                S_BtJ = arg.iPC_w * (arg.iPC_v_w * Visual_BtJ + (1-arg.iPC_v_w) * text_BtJ)
-                S_BtK = arg.iPC_w * (arg.iPC_v_w * Visual_BtK + (1-arg.iPC_v_w) * text_BtK)
+                S_BtJ = self.args.iPC_w * (self.args.iPC_v_w * Visual_BtJ + (1-self.args.iPC_v_w) * text_BtJ)
+                S_BtK = self.args.iPC_w * (self.args.iPC_v_w * Visual_BtK + (1-self.args.iPC_v_w) * text_BtK)
 
                 pred = pred + S_BtJ - S_BtK
 
         if self.with_visual and not self.with_text:
-            if arg.b_PC:
+            if self.args.b_PC:
                 cuj = self.vtbpr(Us, Js, J_visual_latent_p, None) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, K_visual_latent_p, None)
             else:
@@ -221,13 +221,13 @@ class GPBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
             if self.iPC:
-                S_BtJ = arg.iPC_w * Visual_BtJ 
-                S_BtK = arg.iPC_w * Visual_BtK 
+                S_BtJ = self.args.iPC_w * Visual_BtJ 
+                S_BtK = self.args.iPC_w * Visual_BtK 
 
                 pred = pred + S_BtJ - S_BtK
         
         if not self.with_visual and self.with_text:
-            if arg.b_PC:
+            if self.args.b_PC:
                 cuj = self.vtbpr(Us, Js, None, J_text_latent_p) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, None, K_text_latent_p)
             else:
@@ -240,8 +240,8 @@ class GPBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
             if self.iPC:
-                S_BtJ = arg.iPC_w * text_BtJ
-                S_BtK = arg.iPC_w * text_BtK
+                S_BtJ = self.args.iPC_w * text_BtJ
+                S_BtK = self.args.iPC_w * text_BtK
 
                 pred = pred + S_BtJ - S_BtK
    
