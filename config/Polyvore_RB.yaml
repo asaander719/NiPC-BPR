@@ -3,12 +3,14 @@ DATA:
   data_root: dataset/Polyvore_519
   train_data: dataset/Polyvore_519/polyvore_U_519_subset_data/train_sub_data.csv
   valid_data: dataset/Polyvore_519/polyvore_U_519_subset_data/valid_sub_data.csv
+  test_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
   uid_dic: dataset/Polyvore_519/polyvore_U_519_data/uid_dic  #user_indix dict
   user_map: dataset/Polyvore_519/polyvore_U_519_data/user_map  #user id_index map
   item_map: dataset/Polyvore_519/polyvore_U_519_data/item_map  #item id_index map, including bottom and top
   img_map: dataset/Polyvore_519/polyvore_U_519_data/img_map    #all image name_id map
   visual_features_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_visual_fea_tensor_new # top and bottom visual feature tensor
-  textural_feature_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_text_vector
+  textural_features_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_text_vector
+  textural_embedding_matrix: dataset/IQON3000/feat/smallnwjc2vec
  
 TRAIN:
   arch: NiPCBPR
@@ -17,13 +19,13 @@ TRAIN:
   start_epoch: 0
   print_freq: 1
   workers: 2
-  batch_size: 64
+  batch_size: 1024
   hidden_dim: 512
   text_feature_dim: 2400
   visual_feature_dim: 2048
   with_visual: True
   with_text: True
-  train_gpu: [5]
+  train_gpu: [0]
   base_lr: 0.001 # learning rate
   wd: 0.0001 # weight decay
   power: 0.9
@@ -31,11 +33,11 @@ TRAIN:
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top
   patience: 5 # for early stop
   with_Nor: True # Feature Scaling
-  b_PC: Ture # project bottom into personalization and conpatibility spaces separately
+  b_PC: True # project bottom into personalization and conpatibility spaces separately
   UC: False # user preference consistency branch
   IC: False # item compatibility consistency branch
   iPC: True # indirect personal compatibility branch
-  Cos: True # using cosine similairity calculate distance
+  cos: True # using cosine similairity calculate distance
   UC_w: 4
   IC_w: 4
   iPC_w: 4
@@ -52,6 +54,8 @@ TRAIN:
   num_interact: 2
   iPC_v_w: 0.5
   save_freq: 1
+  textcnn_layer: 4 #not use in polyvore
+  max_sentence: 83 #not use in polyvore
 
 Distributed:
   dist_url: tcp://158.132.123.124:6080
@@ -61,9 +65,10 @@ Distributed:
   rank: 0
 
 TEST:
-  test_sub_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
-  test_batch_size: 64
+  # test_sub_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
+  test_batch_size: 1024
   test_gpu: [0]
   has_prediction: False # has prediction already or not
   model_path: saved/Polyvore_519/NiPCBPR    # evaluation model path
   save_folder: saved/Polyvore_519/NiPCBPR/result  #test results save folder
+  test_distributed: False

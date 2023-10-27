@@ -32,24 +32,12 @@ class NiPCBPR(Module):
         self.visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
-        self.text_nn = Sequential(
-            Linear(100 * args.textcnn_layer, self.hidden_dim),
-            nn.Sigmoid()) 
-        self.text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
-        self.text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
-
         #for personalization space
         self.p_visual_nn = Sequential(
             Linear(args.visual_feature_dim, self.hidden_dim),
             nn.Sigmoid())
         self.p_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.p_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
-
-        self.p_text_nn = Sequential(
-            Linear(100 * args.textcnn_layer, self.hidden_dim),
-            nn.Sigmoid())
-        self.p_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
-        self.p_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         #for iPC space
         self.iPC_visual_nn = Sequential(
@@ -58,9 +46,36 @@ class NiPCBPR(Module):
         self.iPC_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.iPC_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
-        self.iPC_text_nn = Sequential(
-            Linear(100 * args.textcnn_layer, self.hidden_dim),
-            nn.Sigmoid())
+        if self.args.dataset == 'IQON3000':
+            self.text_nn = Sequential(
+                Linear(100 * args.textcnn_layer, self.hidden_dim),
+                nn.Sigmoid()) 
+
+            self.p_text_nn = Sequential(
+                Linear(100 * args.textcnn_layer, self.hidden_dim),
+                nn.Sigmoid())
+
+            self.iPC_text_nn = Sequential(
+                Linear(100 * args.textcnn_layer, self.hidden_dim),
+                nn.Sigmoid())
+
+        elif self.args.dataset == 'Polyvore':
+            self.text_nn = Sequential(
+                Linear(args.text_feature_dim, self.hidden_dim),
+                nn.Sigmoid()) 
+
+            self.p_text_nn = Sequential(
+                Linear(args.text_feature_dim, self.hidden_dim),
+                nn.Sigmoid())
+
+            self.iPC_text_nn = Sequential(
+                Linear(args.text_feature_dim, self.hidden_dim),
+                nn.Sigmoid())
+
+        self.text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
+        self.text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))       
+        self.p_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
+        self.p_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))     
         self.iPC_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.iPC_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
         
@@ -133,21 +148,34 @@ class NiPCBPR(Module):
                     Visual_BtK = torch.sum(tb_his_visual * vis_K_s, dim=-1) 
 
         if self.with_text:
-            text_I = self.text_embedding(self.text_features[Is]) #256,83,300
-            text_J = self.text_embedding(self.text_features[Js])
-            text_K = self.text_embedding(self.text_features[Ks])
+            if self.args.dataset == 'IQON3000':
+                text_I = self.text_embedding(self.text_features[Is]) #256,83,300
+                text_J = self.text_embedding(self.text_features[Js])
+                text_K = self.text_embedding(self.text_features[Ks])
 
-            I_text_fea = self.textcnn(text_I.unsqueeze(1))  #256,400
-            J_text_fea = self.textcnn(text_J.unsqueeze(1))
-            K_text_fea = self.textcnn(text_K.unsqueeze(1))
+                I_text_fea = self.textcnn(text_I.unsqueeze(1))  #256,400
+                J_text_fea = self.textcnn(text_J.unsqueeze(1))
+                K_text_fea = self.textcnn(text_K.unsqueeze(1))
 
-            I_text_latent = self.text_nn(I_text_fea) #256,512
-            J_text_latent = self.text_nn(J_text_fea)
-            K_text_latent = self.text_nn(K_text_fea)
+                I_text_latent = self.text_nn(I_text_fea) #256,512
+                J_text_latent = self.text_nn(J_text_fea)
+                K_text_latent = self.text_nn(K_text_fea)
 
-            J_text_latent_p = self.p_text_nn(J_text_fea)
-            K_text_latent_p = self.p_text_nn(K_text_fea)
+                J_text_latent_p = self.p_text_nn(J_text_fea)
+                K_text_latent_p = self.p_text_nn(K_text_fea)
 
+            elif self.args.dataset == 'Polyvore':
+                text_I = self.text_features[Is] #256,83,300
+                text_J = self.text_features[Js]
+                text_K = self.text_features[Ks]
+
+                I_text_latent = self.text_nn(text_I) #256,512
+                J_text_latent = self.text_nn(text_J)
+                K_text_latent = self.text_nn(text_K)
+
+                J_text_latent_p = self.p_text_nn(text_J)
+                K_text_latent_p = self.p_text_nn(text_K)
+            
             if self.with_Nor:
                 I_text_latent = F.normalize(I_text_latent,dim=0)
                 J_text_latent = F.normalize(J_text_latent,dim=0)
@@ -164,29 +192,50 @@ class NiPCBPR(Module):
                 text_ik = torch.sum(I_text_latent * K_text_latent, dim=-1)
                 
             if self.iPC:
-                text_tbhis = self.text_embedding(self.text_features[tbhis]) #torch.size(256,3,83,300) last(55,3,83,300)
-                #T history 用来和bottom描述c空间的相似度，所以应该在c空间（进过mlp才对) b=a.reshape(5*3,2,2).unsqueeze(1).reshape(5,3,2,2)
-                text_tbhis_re = text_tbhis.reshape(bs * self.args.num_interact,self.args.max_sentence,self.args.text_feature_dim)
-                tbhis_text_fea = self.textcnn(text_tbhis_re.unsqueeze(1)) #bs*3, 1 ,83,300 -> #torch.Size([768, 400])
-                  
-                tbhis_text_fea_latent = (self.iPC_text_nn(tbhis_text_fea)).reshape(bs, self.args.num_interact, self.hidden_dim) #bs,3,hd = torch.Size([256, 3, 512])
-                tbhis_text_fea_latent_mean = torch.mean(tbhis_text_fea_latent, dim=-2) #bs,hd #torch.Size([256, 512])
+                if self.args.dataset == 'IQON3000':
+                    text_tbhis = self.text_embedding(self.text_features[tbhis]) #torch.size(256,3,83,300) last(55,3,83,300)
+                    #T history 用来和bottom描述c空间的相似度，所以应该在c空间（进过mlp才对) b=a.reshape(5*3,2,2).unsqueeze(1).reshape(5,3,2,2)
+                    text_tbhis_re = text_tbhis.reshape(bs * self.args.num_interact,self.args.max_sentence,self.args.text_feature_dim)
+                    tbhis_text_fea = self.textcnn(text_tbhis_re.unsqueeze(1)) #bs*3, 1 ,83,300 -> #torch.Size([768, 400])
+                    
+                    tbhis_text_fea_latent = (self.iPC_text_nn(tbhis_text_fea)).reshape(bs, self.args.num_interact, self.hidden_dim) #bs,3,hd = torch.Size([256, 3, 512])
+                    tbhis_text_fea_latent_mean = torch.mean(tbhis_text_fea_latent, dim=-2) #bs,hd #torch.Size([256, 512])
 
-                text_J_s = self.iPC_text_nn(J_text_fea)
-                text_K_s = self.iPC_text_nn(K_text_fea)
+                    text_J_s = self.iPC_text_nn(J_text_fea)
+                    text_K_s = self.iPC_text_nn(K_text_fea)
 
-                if self.with_Nor:
-                    tbhis_text_fea_latent_mean = F.normalize(tbhis_text_fea_latent_mean,dim=0)
-                    text_J_s = F.normalize(text_J_s,dim=0)
-                    text_K_s = F.normalize(text_K_s,dim=0)
+                    if self.with_Nor:
+                        tbhis_text_fea_latent_mean = F.normalize(tbhis_text_fea_latent_mean,dim=0)
+                        text_J_s = F.normalize(text_J_s,dim=0)
+                        text_K_s = F.normalize(text_K_s,dim=0)
 
-                if self.cos:
-                    text_BtJ = F.cosine_similarity(tbhis_text_fea_latent_mean, text_J_s, dim=-1)
-                    text_BtK = F.cosine_similarity(tbhis_text_fea_latent_mean, text_K_s, dim=-1)
-                else:
-                    text_BtJ = torch.sum(tbhis_text_fea_latent_mean * text_J_s, dim=-1)
-                    text_BtK = torch.sum(tbhis_text_fea_latent_mean * text_K_s, dim=-1)
- 
+                    if self.cos:
+                        text_BtJ = F.cosine_similarity(tbhis_text_fea_latent_mean, text_J_s, dim=-1)
+                        text_BtK = F.cosine_similarity(tbhis_text_fea_latent_mean, text_K_s, dim=-1)
+                    else:
+                        text_BtJ = torch.sum(tbhis_text_fea_latent_mean * text_J_s, dim=-1)
+                        text_BtK = torch.sum(tbhis_text_fea_latent_mean * text_K_s, dim=-1)
+
+                elif self.args.dataset == 'Polyvore':
+                    text_tbhis = self.text_features[tbhis] 
+                    text_tbhis = self.iPC_text_nn(text_tbhis)
+                    text_J_s = self.iPC_text_nn(text_J)
+                    text_K_s = self.iPC_text_nn(text_K)
+                    tb_his_text = torch.mean(text_tbhis, dim=-2)
+
+                    if self.with_Nor:
+                        tb_his_text = F.normalize(tb_his_text,dim=0)
+                        text_J_s = F.normalize(text_J_s,dim=0)
+                        text_K_s = F.normalize(text_K_s,dim=0)
+
+                    if self.cos:
+                        text_BtJ = F.cosine_similarity(tb_his_text, text_J_s, dim=-1)
+                        text_BtK = F.cosine_similarity(tb_his_text, text_K_s, dim=-1)
+
+                    else:
+                        text_BtJ = torch.sum(tb_his_text * text_J_s, dim=-1)
+                        text_BtK = torch.sum(tb_his_text * text_K_s, dim=-1)
+
 
         if self.with_visual and self.with_text:
             if self.args.b_PC:

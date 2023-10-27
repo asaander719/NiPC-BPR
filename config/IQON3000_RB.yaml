@@ -2,6 +2,7 @@ DATA:
   data_root: dataset/IQON3000
   train_data_ori: dataset/IQON3000/data/train.csv
   valid_data_ori: dataset/IQON3000/data/valid.csv
+  test_data_ori: dataset/IQON3000/data/test.csv
   visual_features_dict_ori: dataset/IQON3000/feat/visualfeatures
   textural_idx_dict_ori: dataset/IQON3000/feat/textfeatures
   textural_embedding_matrix: dataset/IQON3000/feat/smallnwjc2vec
@@ -11,6 +12,7 @@ DATA:
   textural_features_tensor: dataset/IQON3000/feat/textfeatures_indexedtenseor
   train_data: dataset/IQON3000/data/train_indexed.csv
   valid_data: dataset/IQON3000/data/valid_indexed.csv
+  test_data: dataset/IQON3000/data/test_indexed.csv
 
 TRAIN:
   arch: NiPCBPR
@@ -33,15 +35,15 @@ TRAIN:
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top
   patience: 5 # for early stop
   with_Nor: True # Feature Scaling
-  b_PC: Ture # project bottom into personalization and conpatibility spaces separately
+  b_PC: True # project bottom into personalization and conpatibility spaces separately
   UC: False # user preference consistency branch
   IC: False # item compatibility consistency branch
   iPC: True # indirect personal compatibility branch
   cos: True # using cosine similairity calculate distance
   weight:  # path to initial weight (default: none)
   resume:  # 
-  weight_UC: 4
-  weight_IC: 4
+  UC_w: 4
+  IC_w: 4
   weight_P: 0.3
   iPC_w: 3
   his_select_t: False # using textual information to help to select historical bottoms
@@ -64,9 +66,9 @@ Distributed:
   rank: 0
 
 TEST:
-  test_sub_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
-  test_batch_size: 64
+  test_batch_size: 1024
   test_gpu: [5]
   has_prediction: False # has prediction already or not
-  model_path: saved/Polyvore_519/NiPCBPR/     # evaluation model path
+  model_path: saved/IQON3000/NiPCBPR/train_epoch_10.pth     # evaluation model path
   save_folder: saved/Polyvore_519/NiPCBPR/result/   #test results save folder
+  test_distributed: False
