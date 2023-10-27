@@ -77,12 +77,9 @@ class EarlyStopping:
         self.delta = delta
         self.trace_func = trace_func
     def __call__(self, val_auc, model):
-
         score = val_auc
-
         if self.best_score is None:
             self.best_score = score
-            # self.save_checkpoint(val_loss, model)
         elif score < self.best_score + self.delta:
             self.counter += 1
             self.trace_func(f'EarlyStopping counter: {self.counter} out of {self.patience}')
@@ -90,7 +87,6 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            # self.save_checkpoint(val_loss, model)
             self.counter = 0
 
     def save_checkpoint(self, val_auc, model):
@@ -138,42 +134,10 @@ def reindex_features(visual_features_ori, text_features_ori, item_map, args):
         torch.save(torch.stack(text_features, dim=0), args.textural_features_tensor)
     return visual_features, text_features
 
-# def training(model, train_data_loader, device, optimizer):
-#     r"""
-#         using data from Args to train model
-#         Args:
-#             mode: -
-#             train_data_loader: mini-batch iteration
-#             device: device on which model train
-#             visual_features: look up table for item visual features
-#             text_features: look up table for item textural features
-#             optimizer: optimizer of model
-#     """
-#     model.train()
-#     model = model.to(device)
-#     loss_scalar = 0.
-#     for iteration, aBatch in enumerate(train_data_loader):
-#         aBatch = [x.to(device) for x in aBatch]
-#         # output = model.fit(aBatch[0], train=True, weight=False)
-#         output = model.forward(aBatch, train=True)   
-#         loss = (-logsigmoid(output)).sum() 
-#         iteration += 1
-#         optimizer.zero_grad()
-#         loss.backward()
-#         optimizer.step()
-#         loss_scalar += loss.detach().cpu()
-        
-#     return loss_scalar/iteration
-
 def train(train_loader, model, optimizer, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    # main_loss_meter = AverageMeter()
-    # aux_loss_meter = AverageMeter()
     loss_meter = AverageMeter()
-    # intersection_meter = AverageMeter()
-    # union_meter = AverageMeter()
-    # # target_meter = AverageMeter()
 
     model.train()
     end = time.time()
@@ -181,9 +145,6 @@ def train(train_loader, model, optimizer, epoch):
     loss_scalar = 0.
     for i, aBatch in enumerate(train_loader):
         data_time.update(time.time() - end)
-        # aBatch = [x.to(device) for x in aBatch]
-        # output = model.fit(aBatch[0], train=True, weight=False)
-        # input = input.cuda(non_blocking=True)
         aBatch = [x.cuda() for x in aBatch]
         output = model.forward(aBatch, train=True)         
         loss = (-logsigmoid(output)).sum() 
@@ -202,24 +163,16 @@ def train(train_loader, model, optimizer, epoch):
             dist.all_reduce(loss)#, dist.all_reduce(count)
             # n = count.item()
             loss = loss / n
-
             loss_meter.update(loss.item(), n)
         
         batch_time.update(time.time() - end)
         end = time.time()
-
         current_iter = epoch * len(train_loader) + i + 1
-        # current_lr = poly_learning_rate(args.base_lr, current_iter, max_iter, power=args.power)
-        # for index in range(0, args.index_split):
-        #     optimizer.param_groups[index]['lr'] = current_lr
-        # for index in range(args.index_split, len(optimizer.param_groups)):
-        #     optimizer.param_groups[index]['lr'] = current_lr * 10
         remain_iter = max_iter - current_iter
         remain_time = remain_iter * batch_time.avg
         t_m, t_s = divmod(remain_time, 60)
         t_h, t_m = divmod(t_m, 60)
         remain_time = '{:02d}:{:02d}:{:02d}'.format(int(t_h), int(t_m), int(t_s))
-
         # if (i + 1) % args.print_freq == 0 and main_process():
     logger.info('Epoch: [{}/{}][{}/{}] '
                 'Data {data_time.val:.3f} ({data_time.avg:.3f}) '
@@ -235,7 +188,7 @@ def train(train_loader, model, optimizer, epoch):
         writer.add_scalar('loss_train_batch', loss_scalar/i, current_iter)
     return loss_meter.avg
 
-def validate(model, val_loader, t_len):#,val_loader, model, criterion):
+def validate(model, val_loader, t_len):
     if main_process():
         logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     batch_time = AverageMeter()
@@ -247,13 +200,9 @@ def validate(model, val_loader, t_len):#,val_loader, model, criterion):
     pos = 0
     for i, aBatch in enumerate(val_loader):
         data_time.update(time.time() - end)
-        # aBatch = [x.to(device) for x in aBatch]
-        # output = model.fit(aBatch[0], train=True, weight=False)
-        # input = input.cuda(non_blocking=True)
         aBatch = [x.cuda(non_blocking=True) for x in aBatch]
         output = model.forward(aBatch, train=False)          
         pos += float(torch.sum(output.ge(0)))
-    # pos_meter.update(pos)
     AUC = pos/t_len
     # return pos/len(testloader)
     batch_time.update(time.time() - end)
@@ -281,29 +230,19 @@ def Get_Data(train_data_file):
 
 
     
-def main_worker(gpu, ngpus_per_node, argss):#多分布式
+def main_worker(gpu, ngpus_per_node, argss):
     global args
     args = argss
     visual_features_tensor = torch.load(args.visual_features_tensor, map_location= lambda a,b:a.cpu())#torch.Size([142737, 2048])
-    # v_zeros = torch.zeros(visual_features_tensor.size(-1)).unsqueeze(0)
-    # visual_features_tensor = torch.cat((visual_features_tensor,v_zeros),0)#torch.Size([142738, 2048])
-
     if args.with_text:
         text_features_tensor = torch.load(args.textural_features_tensor, map_location= lambda a,b:a.cpu())#torch.Size([142737, 83])
-        embedding_weight = load_embedding_weight(args.textural_embedding_matrix)#torch.Size([54276, 300])
-
-        # t_zeros = torch.zeros(text_features_tensor.size(-1)).unsqueeze(0)
-        # text_features_tensor = torch.cat((text_features_tensor,t_zeros),0)#torch.Size([142738, 83])
-        # e_zeros = torch.zeros(embedding_weight.size(-1)).unsqueeze(0).to(conf["device"])
-        # embedding_weight = torch.cat((embedding_weight, e_zeros), 0).to(conf["device"])#torch.Size([54277, 300])
-    
+        embedding_weight = load_embedding_weight(args.textural_embedding_matrix)#torch.Size([54276, 300])   
     else:
         text_features_tensor = None
         embedding_weight = None
 
     user_map = json.load(open(args.user_map))
-    item_map = json.load(open(args.item_map))
-  
+    item_map = json.load(open(args.item_map)) 
     args.user_num = len(user_map)
     args.item_num = len(item_map)
     if args.distributed:
@@ -313,33 +252,12 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
             args.rank = args.rank * ngpus_per_node + gpu
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
 
-    # criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label)
-    if args.arch == 'NiPCBPR':#定义模型结构
+    if args.arch == 'NiPCBPR':
         from Models.BPRs.NiPCBPR import NiPCBPR
         model = NiPCBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
     optimizer = Adam([{'params': model.parameters(),'lr': args.base_lr, "weight_decay": args.wd}])
-    #     model = PSPNet(layers=args.layers, classes=args.classes, zoom_factor=args.zoom_factor, criterion=criterion)
-    #     modules_ori = [model.layer0, model.layer1, model.layer2, model.layer3, model.layer4]
-    #     modules_new = [model.ppm, model.cls, model.aux]
-    # elif args.arch == 'psa':
-    #     from model.psanet import PSANet
-    #     model = PSANet(layers=args.layers, classes=args.classes, zoom_factor=args.zoom_factor, psa_type=args.psa_type,
-    #                    compact=args.compact, shrink_factor=args.shrink_factor, mask_h=args.mask_h, mask_w=args.mask_w,
-    #                    normalization_factor=args.normalization_factor, psa_softmax=args.psa_softmax, criterion=criterion)
-    #     modules_ori = [model.layer0, model.layer1, model.layer2, model.layer3, model.layer4]
-    #     modules_new = [model.psa, model.cls, model.aux]
-    # params_list = []#空列表放参数列表，为训练用
-    # params_list.append(dict(params=model.parameters(), lr=args.base_lr))
-    # # for module in modules_ori:
-    # #     params_list.append(dict(params=module.parameters(), lr=args.base_lr))
-    # # for module in modules_new:
-    # #     params_list.append(dict(params=module.parameters(), lr=args.base_lr * 10))
-    # args.index_split = 5
-    # optimizer = torch.optim.SGD(params_list, lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    # if args.sync_bn:
-    #     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-    if main_process():#打印状态
+    if main_process():
         global logger, writer
         logger = get_logger()
         writer = SummaryWriter(args.save_path)
@@ -371,7 +289,6 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
         if os.path.isfile(args.resume):
             if main_process():
                 logger.info("=> loading checkpoint '{}'".format(args.resume))
-            # checkpoint = torch.load(args.resume)
             checkpoint = torch.load(args.resume, map_location=lambda storage, loc: storage.cuda())
             args.start_epoch = checkpoint['epoch']
             model.load_state_dict(checkpoint['state_dict'])
@@ -387,9 +304,7 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
     train_data_ori = load_csv_data(args.train_data)
     train_data_ori  = torch.LongTensor(train_data_ori)
     train_data = Load_Data(args, train_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
-    # train_loader = DataLoader(train_data, batch_size=conf["batch_size"], shuffle=True, drop_last=True)
 
-    # train_data = dataset.SemData(split='train', data_root=args.data_root, data_list=args.train_list)
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_data)
     else:
@@ -399,9 +314,7 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
         valid_data_ori = load_csv_data(args.valid_data)
         valid_data_ori  = torch.LongTensor(valid_data_ori)
         valid_data = Load_Data(args, valid_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
-        # valid_loader = DataLoader(valid_data, batch_size=conf["batch_size"], shuffle=False)
         v_len = len(valid_data_ori)
-        # val_data = dataset.SemData(split='val', data_root=args.data_root, data_list=args.val_list, transform=val_transform)
         if args.distributed:
             val_sampler = torch.utils.data.distributed.DistributedSampler(valid_data)
         else:
@@ -409,7 +322,6 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
         val_loader = torch.utils.data.DataLoader(valid_data, batch_size=args.batch_size_val, shuffle=False, num_workers=args.workers, pin_memory=True, sampler=val_sampler)
     
     early_stopping = EarlyStopping(patience=args.patience, verbose=True)
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')#动态调整学习率
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.97 ** epoch) 
 
     for epoch in range(args.start_epoch, args.epochs):
@@ -443,10 +355,8 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
 # def worker_init_fn(worker_id):
 #     random.seed(args.manual_seed + worker_id)
 
-
 def main_process():
     return not args.multiprocessing_distributed or (args.multiprocessing_distributed and args.rank % args.ngpus_per_node == 0)
-
 
 def main():
     args = get_parser()

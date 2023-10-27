@@ -69,6 +69,6 @@ TEST:
   test_batch_size: 1024
   test_gpu: [4]
   has_prediction: False # has prediction already or not
-  model_path: saved/Polyvore_519/NiPCBPR_RT/train_epoch_24.pth    # evaluation model path
+  model_path: saved/Polyvore_519/NiPCBPR_RT/train_epoch_15.pth    # evaluation model path
   save_folder: saved/Polyvore_519/NiPCBPR_RT/result  #test results save folder
   test_distributed: False

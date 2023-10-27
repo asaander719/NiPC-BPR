@@ -32,8 +32,8 @@ import pandas as pd
 
 def get_parser(): 
     parser = argparse.ArgumentParser(description='Recommendation of Mix-and-Match Clothing by Modeling Indirect Personal Compatibility')
-    parser.add_argument('--config', type=str, default='config/Polyvore_RT.yaml', help='config file')
-    parser.add_argument('opts', help='see config/Polyvore_RT.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('--config', type=str, default='config/Polyvore_RB.yaml', help='config file')
+    parser.add_argument('opts', help='see config/Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)
@@ -116,7 +116,7 @@ def main():
     test_data_ori  = torch.LongTensor(test_data_ori)
     test_data = Load_Data(args, test_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
-    t_len = len(test_data_ori)
+    t_len = len(test_data)
     print("test data len:", t_len)
     # names = [line.rstrip('\n') for line in open(args.names_path)]
 
