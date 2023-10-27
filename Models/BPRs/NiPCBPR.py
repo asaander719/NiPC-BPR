@@ -129,23 +129,25 @@ class NiPCBPR(Module):
                 visual_ij = torch.sum(I_visual_latent * J_visual_latent, dim=-1)
                 visual_ik = torch.sum(I_visual_latent * K_visual_latent, dim=-1)
 
-            if self.iPC:
-                vis_tbhis = self.visual_features[tbhis] # bs, num_interact, 2048
-                vis_tbhis = self.iPC_visual_nn(vis_tbhis)  #bs,1,512
-                vis_J_s = self.iPC_visual_nn(vis_J)
-                vis_K_s = self.iPC_visual_nn(vis_K)
-                tb_his_visual = torch.mean(vis_tbhis, dim=-2)  #bs,512
+            if self.iPC:    
+                vis_this = self.visual_features[this]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
+                vis_this = self.iPC_visual_nn(vis_this) #bs,3,512
+                # print(vis_bhis.size()) torch.Size([64, 3, 512])
+                vis_J_c= self.iPC_visual_nn(vis_J)
+                vis_K_c = self.iPC_visual_nn(vis_K)
+                t_his_visual = torch.mean(vis_this, dim=-2)  #bs, visual_feature_dim = 2048 #torch.Size([256, 512])
+
                 if self.with_Nor:
-                    tb_his_visual = F.normalize(tb_his_visual,dim=0)
-                    vis_J_s = F.normalize(vis_J_s,dim=0)
-                    vis_K_s = F.normalize(vis_K_s,dim=0)
+                    t_his_visual = F.normalize(t_his_visual,dim=0)
+                    vis_J_c = F.normalize(vis_J_c,dim=0)
+                    vis_K_c = F.normalize(vis_K_c,dim=0)
 
                 if self.cos:
-                    Visual_BtJ = F.cosine_similarity(tb_his_visual, vis_J_s, dim=-1)
-                    Visual_BtK = F.cosine_similarity(tb_his_visual, vis_K_s, dim=-1)
+                    Visual_TuJ = F.cosine_similarity(t_his_visual, vis_J_c, dim=-1)
+                    Visual_TuK = F.cosine_similarity(t_his_visual, vis_K_c, dim=-1)
                 else:
-                    Visual_BtJ = torch.sum(tb_his_visual * vis_J_s, dim=-1)
-                    Visual_BtK = torch.sum(tb_his_visual * vis_K_s, dim=-1) 
+                    Visual_TuJ = torch.sum(t_his_visual * vis_J_c, dim=-1)
+                    Visual_TuK = torch.sum(t_his_visual * vis_K_c, dim=-1)
 
         if self.with_text:
             if self.args.dataset == 'IQON3000':
@@ -193,49 +195,42 @@ class NiPCBPR(Module):
                 
             if self.iPC:
                 if self.args.dataset == 'IQON3000':
-                    text_tbhis = self.text_embedding(self.text_features[tbhis]) #torch.size(256,3,83,300) last(55,3,83,300)
-                    #T history 用来和bottom描述c空间的相似度，所以应该在c空间（进过mlp才对) b=a.reshape(5*3,2,2).unsqueeze(1).reshape(5,3,2,2)
-                    text_tbhis_re = text_tbhis.reshape(bs * self.args.num_interact,self.args.max_sentence,self.args.text_feature_dim)
-                    tbhis_text_fea = self.textcnn(text_tbhis_re.unsqueeze(1)) #bs*3, 1 ,83,300 -> #torch.Size([768, 400])
-                    
-                    tbhis_text_fea_latent = (self.iPC_text_nn(tbhis_text_fea)).reshape(bs, self.args.num_interact, self.hidden_dim) #bs,3,hd = torch.Size([256, 3, 512])
-                    tbhis_text_fea_latent_mean = torch.mean(tbhis_text_fea_latent, dim=-2) #bs,hd #torch.Size([256, 512])
+                    text_this = self.text_embedding(self.text_features[this]) #torch.Size([64, 3, 83, 300])
+                    this_text_fea = self.textcnn(text_this.reshape(bs * self.args.num_his, self.args.max_sentence, self.args.text_feature_dim).unsqueeze(1))  #bs, 400(100*layers)
+                    this_text_fea = self.iPC_text_nn(this_text_fea) #torch.Size([192, 512])
+                    this_text_fea = this_text_fea.reshape(bs, self.args.num_his, self.hidden_dim) #64, 3, 512
+                    this_text_fea_mean = torch.mean(this_text_fea, dim=-2) #torch.Size([bs, 512])
 
-                    text_J_s = self.iPC_text_nn(J_text_fea)
-                    text_K_s = self.iPC_text_nn(K_text_fea)
-
+                    text_J_c = self.iPC_text_nn(J_text_fea)
+                    text_K_c = self.iPC_text_nn(K_text_fea)
                     if self.with_Nor:
-                        tbhis_text_fea_latent_mean = F.normalize(tbhis_text_fea_latent_mean,dim=0)
-                        text_J_s = F.normalize(text_J_s,dim=0)
-                        text_K_s = F.normalize(text_K_s,dim=0)
-
+                        this_text_fea_mean = F.normalize(this_text_fea_mean,dim=0)
+                        text_J_c = F.normalize(text_J_c,dim=0)
+                        text_K_c = F.normalize(text_K_c,dim=0)
                     if self.cos:
-                        text_BtJ = F.cosine_similarity(tbhis_text_fea_latent_mean, text_J_s, dim=-1)
-                        text_BtK = F.cosine_similarity(tbhis_text_fea_latent_mean, text_K_s, dim=-1)
+                        text_TuJ = F.cosine_similarity(this_text_fea_mean, text_J_c, dim=-1)
+                        text_TuK = F.cosine_similarity(this_text_fea_mean, text_K_c, dim=-1)
                     else:
-                        text_BtJ = torch.sum(tbhis_text_fea_latent_mean * text_J_s, dim=-1)
-                        text_BtK = torch.sum(tbhis_text_fea_latent_mean * text_K_s, dim=-1)
+                        text_TuJ = torch.sum(this_text_fea_mean * text_J_c, dim=-1)
+                        text_TuK = torch.sum(this_text_fea_mean * text_K_c, dim=-1)
 
                 elif self.args.dataset == 'Polyvore':
-                    text_tbhis = self.text_features[tbhis] 
-                    text_tbhis = self.iPC_text_nn(text_tbhis)
-                    text_J_s = self.iPC_text_nn(text_J)
-                    text_K_s = self.iPC_text_nn(text_K)
-                    tb_his_text = torch.mean(text_tbhis, dim=-2)
-
+                    text_this = self.text_features[this]
+                    text_this = self.iPC_text_nn(text_this)
+                    text_J_c = self.iPC_text_nn(text_J)
+                    text_K_c = self.iPC_text_nn(text_K)
+                    t_his_text = torch.mean(text_this, dim=-2)  #bs, visual_feature_dim = 2048 #torch.Size([256, 2048])
                     if self.with_Nor:
-                        tb_his_text = F.normalize(tb_his_text,dim=0)
-                        text_J_s = F.normalize(text_J_s,dim=0)
-                        text_K_s = F.normalize(text_K_s,dim=0)
+                        t_his_text = F.normalize(t_his_text,dim=0)
+                        text_J_c = F.normalize(text_J_c,dim=0)
+                        text_K_c = F.normalize(text_K_c,dim=0)
 
                     if self.cos:
-                        text_BtJ = F.cosine_similarity(tb_his_text, text_J_s, dim=-1)
-                        text_BtK = F.cosine_similarity(tb_his_text, text_K_s, dim=-1)
-
+                        text_TuJ = F.cosine_similarity(t_his_text, text_J_c, dim=-1)
+                        text_TuK = F.cosine_similarity(t_his_text, text_K_c, dim=-1)
                     else:
-                        text_BtJ = torch.sum(tb_his_text * text_J_s, dim=-1)
-                        text_BtK = torch.sum(tb_his_text * text_K_s, dim=-1)
-
+                        text_TuJ = torch.sum(t_his_text * text_J_c, dim=-1)
+                        text_TuK = torch.sum(t_his_text * text_K_c, dim=-1) 
 
         if self.with_visual and self.with_text:
             if self.args.b_PC:
@@ -251,10 +246,10 @@ class NiPCBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk) 
 
             if self.iPC:
-                S_BtJ = self.args.iPC_w * (self.args.iPC_v_w * Visual_BtJ + (1-self.args.iPC_v_w) * text_BtJ)
-                S_BtK = self.args.iPC_w * (self.args.iPC_v_w * Visual_BtK + (1-self.args.iPC_v_w) * text_BtK)
+                C_TuJ = self.args.iPC_w * (self.args.iPC_v_w * Visual_TuJ + (1-self.args.iPC_v_w) * text_TuJ)# + bhis_j_latent_mean)
+                C_TuK = self.args.iPC_w * (self.args.iPC_v_w * Visual_TuK + (1-self.args.iPC_v_w) * text_TuK)
 
-                pred = pred + S_BtJ - S_BtK
+                pred = pred + C_TuJ - C_TuK  
 
         if self.with_visual and not self.with_text:
             if self.args.b_PC:
@@ -270,10 +265,10 @@ class NiPCBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
             if self.iPC:
-                S_BtJ = self.args.iPC_w * Visual_BtJ 
-                S_BtK = self.args.iPC_w * Visual_BtK 
+                C_TuJ = self.args.iPC_w * Visual_TuJ 
+                C_TuK = self.args.iPC_w * Visual_TuK 
 
-                pred = pred + S_BtJ - S_BtK
+                pred = pred + C_TuJ - C_TuK 
         
         if not self.with_visual and self.with_text:
             if self.args.b_PC:
@@ -289,9 +284,9 @@ class NiPCBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
             if self.iPC:
-                S_BtJ = self.args.iPC_w * text_BtJ
-                S_BtK = self.args.iPC_w * text_BtK
+                C_TuJ = self.args.iPC_w * text_TuJ
+                C_TuK = self.args.iPC_w * text_TuK
 
-                pred = pred + S_BtJ - S_BtK
+                pred = pred + C_TuJ - C_TuK 
    
         return pred        

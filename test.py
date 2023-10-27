@@ -32,8 +32,8 @@ import pandas as pd
 
 def get_parser(): 
     parser = argparse.ArgumentParser(description='Recommendation of Mix-and-Match Clothing by Modeling Indirect Personal Compatibility')
-    parser.add_argument('--config', type=str, default='config/IQON3000_RB.yaml', help='config file')
-    parser.add_argument('opts', help='see config/IQON3000_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('--config', type=str, default='config/Polyvore_RT.yaml', help='config file')
+    parser.add_argument('opts', help='see config/Polyvore_RT.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)

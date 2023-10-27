@@ -15,7 +15,7 @@ DATA:
   test_data: dataset/IQON3000/data/test_indexed.csv
 
 TRAIN:
-  arch: NiPCBPR
+  arch: NiPCBPR  
   dataset: IQON3000
   epochs: 80
   start_epoch: 0
@@ -29,7 +29,7 @@ TRAIN:
   textcnn_layer: 4
   with_visual: True
   with_text: True
-  train_gpu: [5]
+  train_gpu: [6]
   base_lr: 0.001 # learning rate
   wd: 0.00001 # weight decay
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top
@@ -49,7 +49,7 @@ TRAIN:
   his_select_t: False # using textual information to help to select historical bottoms
   popular_padding: True # using popular items to padding those historiacl interactions less than default number
   repeated_interact: False # only contain one interaction for those bottoms chosed by same top/user more than twice for history selection
-  save_path: saved/IQON3000/NiPCBPR
+  save_path: saved/IQON3000/NiPCBPR_RT
   evaluate: True
   batch_size_val: 1024
   start_epoch: 0
@@ -67,8 +67,8 @@ Distributed:
 
 TEST:
   test_batch_size: 1024
-  test_gpu: [5]
+  test_gpu: [6]
   has_prediction: False # has prediction already or not
-  model_path: saved/IQON3000/NiPCBPR/train_epoch_13.pth     # evaluation model path
-  save_folder: saved/Polyvore_519/NiPCBPR/result/   #test results save folder
+  model_path: saved/IQON3000/NiPCBPR_RT/train_epoch_35.pth    # evaluation model path
+  save_folder: saved/Polyvore_519/NiPCBPR_RT/result/   #test results save folder
   test_distributed: False
