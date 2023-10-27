@@ -16,7 +16,7 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter 
 
-from utils import config
+from util import config
 from tool.util import AverageMeter, poly_learning_rate, find_free_port
 
 

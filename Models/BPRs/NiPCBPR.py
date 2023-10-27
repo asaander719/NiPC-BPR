@@ -7,7 +7,7 @@ import torch.nn as nn
 import pandas as pd
 import numpy as np
 import torch.nn.functional as F
-from utils.utils import get_parser
+from util.utils import get_parser
 from Models.BPRs.BPR import BPR
 from Models.BPRs.VTBPR import VTBPR
 from Models.BPRs.TextCNN import TextCNN

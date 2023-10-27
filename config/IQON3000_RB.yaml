@@ -20,7 +20,7 @@ TRAIN:
   max_sentence: 83
   print_freq: 1
   workers: 2
-  batch_size: 64
+  batch_size: 1024
   hidden_dim: 512
   text_feature_dim: 300
   visual_feature_dim: 2048
@@ -45,15 +45,16 @@ TRAIN:
   weight_P: 0.3
   iPC_w: 3
   his_select_t: False # using textual information to help to select historical bottoms
-  popupar_padding: True # using popular items to padding those historiacl interactions less than default number
+  popular_padding: True # using popular items to padding those historiacl interactions less than default number
   repeated_interact: False # only contain one interaction for those bottoms chosed by same top/user more than twice for history selection
   save_path: saved/IQON3000/NiPCBPR
   evaluate: True
-  batch_size_val: 64
+  batch_size_val: 1024
   start_epoch: 0
   num_his: 2
   num_interact: 2
   iPC_v_w: 0.5
+  save_freq: 1
 
 Distributed:
   dist_url: tcp://127.0.0.1:6789

@@ -16,7 +16,7 @@ import torch.utils.data
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter
-from utils import config
+from util import config
 from tool.util import AverageMeter, poly_learning_rate, find_free_port
 from trainer.loader_iqon import Load_Data
 import csv
@@ -220,22 +220,22 @@ def train(train_loader, model, optimizer, epoch):
         t_h, t_m = divmod(t_m, 60)
         remain_time = '{:02d}:{:02d}:{:02d}'.format(int(t_h), int(t_m), int(t_s))
 
-        if (i + 1) % args.print_freq == 0 and main_process():
-            logger.info('Epoch: [{}/{}][{}/{}] '
-                        'Data {data_time.val:.3f} ({data_time.avg:.3f}) '
-                        'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
-                        'Remain {remain_time} '
-                        'Loss {loss_meter.val:.4f} '.format(epoch+1, args.epochs, i + 1, len(train_loader),
-                                                          batch_time=batch_time,
-                                                          data_time=data_time,
-                                                          remain_time=remain_time,
-                                                          loss_meter=loss_scalar/i))
+        # if (i + 1) % args.print_freq == 0 and main_process():
+    logger.info('Epoch: [{}/{}][{}/{}] '
+                'Data {data_time.val:.3f} ({data_time.avg:.3f}) '
+                'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
+                'Remain {remain_time} '
+                'Loss {loss_meter:.4f} '.format(epoch+1, args.epochs, i + 1, len(train_loader),
+                                                    batch_time=batch_time,
+                                                    data_time=data_time,
+                                                    remain_time=remain_time,
+                                                    loss_meter=loss_scalar/i))
                                                           
-        if main_process():
-            writer.add_scalar('loss_train_batch', loss_scalar/i, current_iter)
+    if main_process():
+        writer.add_scalar('loss_train_batch', loss_scalar/i, current_iter)
     return loss_meter.avg
 
-def validate(model, testloader, t_len):#,val_loader, model, criterion):
+def validate(model, val_loader, t_len):#,val_loader, model, criterion):
     if main_process():
         logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     batch_time = AverageMeter()
@@ -253,15 +253,15 @@ def validate(model, testloader, t_len):#,val_loader, model, criterion):
         aBatch = [x.cuda(non_blocking=True) for x in aBatch]
         output = model.forward(aBatch, train=False)          
         pos += float(torch.sum(output.ge(0)))
-    pos_meter.update(pos)
+    # pos_meter.update(pos)
     AUC = pos/t_len
     # return pos/len(testloader)
     batch_time.update(time.time() - end)
     end = time.time()
-    if ((i + 1) % args.print_freq == 0) and main_process():
-        logger.info('Test: [{}/{}] '
-                    'Accuracy {accuracy:.4f}.'.format(i + 1, len(val_loader),
-                                                        accuracy=AUC))
+    # if ((i + 1) % args.print_freq == 0) and main_process():
+    logger.info('Test: [{}/{}] '
+                'Accuracy {accuracy:.4f}.'.format(i + 1, len(val_loader),
+                                                    accuracy=AUC))
     return AUC, pos
 
 
@@ -435,10 +435,10 @@ def main_worker(gpu, ngpus_per_node, argss):#多分布式
             if main_process():
                 writer.add_scalar('AUC', AUC, epoch_log)
                 
-        early_stopping(valid_auc, gpbpr)
-        if early_stopping.early_stop:
-            print("Early stopping")
-            break 
+            early_stopping(AUC, model)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break 
 
 # def worker_init_fn(worker_id):
 #     random.seed(args.manual_seed + worker_id)

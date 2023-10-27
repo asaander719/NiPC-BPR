@@ -8,9 +8,9 @@ import pandas as pd
 import numpy as np
 import torch.nn.functional as F
 from utils.utils import get_parser
-from BPR import BPR
-from VTBPR import VTBPR
-from TextCNN import TextCNN
+from Models.BPRs.BPR import BPR
+from Models.BPRs.VTBPR import VTBPR
+from Models.BPRs.TextCNN import TextCNN
 
 class GPBPR(Module):
     def __init__(self, arg, embedding_weight, visual_features, text_features):        
@@ -255,7 +255,7 @@ class GPBPR(Module):
                     text_TuK = torch.sum(this_text_fea_mean * text_K_c, dim=-1) 
 
         if self.with_visual and self.with_text:
-            if arg.b_PC:
+            if self.arg.b_PC:
                 cuj = self.vtbpr(Us, Js, J_visual_latent_p, J_text_latent_p) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, K_visual_latent_p, K_text_latent_p)
             else:
@@ -268,19 +268,19 @@ class GPBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
             if self.UC:
-                C_BuJ = arg.UC_w  * (arg.UC_v_w  * Visual_BuJ + (1-arg.UC_v_w) * text_BuJ)
-                C_BuK = arg.UC_w  * (arg.UC_v_w  * Visual_BuK + (1-arg.UC_v_w) * text_BuK)
+                C_BuJ = self.arg.UC_w  * (self.arg.UC_v_w  * Visual_BuJ + (1-self.arg.UC_v_w) * text_BuJ)
+                C_BuK = self.arg.UC_w  * (self.arg.UC_v_w  * Visual_BuK + (1-self.arg.UC_v_w) * text_BuK)
 
                 pred = pred + C_BuJ - C_BuK
 
             if self.IC:
-                C_TuJ = arg.IC_w * (arg.IC_v_w * Visual_TuJ + (1-arg.IC_v_w) * text_TuJ)
-                C_TuK = arg.IC_w * (arg.IC_v_w * Visual_TuK + (1-arg.IC_v_w) * text_TuK)
+                C_TuJ = self.arg.IC_w * (self.arg.IC_v_w * Visual_TuJ + (1-self.arg.IC_v_w) * text_TuJ)
+                C_TuK = self.arg.IC_w * (self.arg.IC_v_w * Visual_TuK + (1-self.arg.IC_v_w) * text_TuK)
 
                 pred = pred + C_TuJ - C_TuK   
 
         if self.with_visual and not self.with_text:
-            if arg.b_PC:
+            if self.arg.b_PC:
                 cuj = self.vtbpr(Us, Js, J_visual_latent_p, None) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, K_visual_latent_p, None)
             else:
@@ -293,19 +293,19 @@ class GPBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
             if self.UC:
-                C_BuJ = arg.UC_w * Visual_BuJ 
-                C_BuK = arg.UC_w * Visual_BuK 
+                C_BuJ = self.arg.UC_w * Visual_BuJ 
+                C_BuK = self.arg.UC_w * Visual_BuK 
 
                 pred = pred + C_BuJ - C_BuK
 
             if self.IC:
-                C_TuJ = arg.IC_w * Visual_TuJ 
-                C_TuK = arg.IC_w * Visual_TuK 
+                C_TuJ = self.arg.IC_w * Visual_TuJ 
+                C_TuK = self.arg.IC_w * Visual_TuK 
 
                 pred = pred + C_TuJ - C_TuK   
         
         if not self.with_visual and self.with_text:
-            if arg.b_PC:
+            if self.arg.b_PC:
                 cuj = self.vtbpr(Us, Js, None, J_text_latent_p) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, None, K_text_latent_p)
             else:
@@ -318,14 +318,14 @@ class GPBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
             if self.UC:
-                C_BuJ = arg.UC_w * text_BuJ
-                C_BuK = arg.UC_w * text_BuK
+                C_BuJ = self.arg.UC_w * text_BuJ
+                C_BuK = self.arg.UC_w * text_BuK
 
                 pred = pred + C_BuJ - C_BuK
 
             if self.IC:
-                C_TuJ = arg.IC_w * text_TuJ
-                C_TuK = arg.IC_w * text_TuK
+                C_TuJ = self.arg.IC_w * text_TuJ
+                C_TuK = self.arg.IC_w * text_TuK
 
                 pred = pred + C_TuJ - C_TuK   
    
