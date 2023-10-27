@@ -14,6 +14,7 @@ DATA:
 
 TRAIN:
   arch: NiPCBPR
+  dataset: IQON3000
   epochs: 80
   start_epoch: 0
   max_sentence: 83

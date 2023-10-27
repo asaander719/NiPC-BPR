@@ -12,6 +12,7 @@ DATA:
  
 TRAIN:
   arch: NiPCBPR
+  dataset: Polyvore
   epochs: 80
   start_epoch: 0
   print_freq: 1
