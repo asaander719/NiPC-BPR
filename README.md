@@ -34,7 +34,7 @@ To evaluate the AUC of the well-trained model with default format (Given top and
 Or you can modify the corresponding path name.
 
 ## Tips
-- Note that we conduct our experiment under two different setting with two datasets, and you can modify the configurations in **yaml** files in **config** folder, where **_RB** refers to Given TOP and Recommend Bottom and **_RT** refers to Given Bottom and Recommend Top.
+- Note that we conduct our experiment under two different setting with two datasets, and you can modify the configurations in **yaml** files in **./config/** folder, where **_RB** refers to Given TOP and Recommend Bottom and **_RT** refers to Given Bottom and Recommend Top.
 - The model code is at `Models/BPRs/NiPCBPR.py`.
 
 ## Citation
@@ -48,3 +48,5 @@ If you find our work helpful, please kindly cite our research paper:
   year={2023}
 }
 ```
+
+ 
