@@ -29,7 +29,7 @@ TRAIN:
   textcnn_layer: 4
   with_visual: True
   with_text: True
-  train_gpu: [5]
+  train_gpu: [0]
   base_lr: 0.001 # learning rate
   wd: 0.00001 # weight decay
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top
@@ -67,7 +67,7 @@ Distributed:
 
 TEST:
   test_batch_size: 1024
-  test_gpu: [5]
+  test_gpu: [0]
   has_prediction: False # has prediction already or not
   model_path: saved/IQON3000/NiPCBPR/train_epoch_13.pth     # evaluation model path
   save_folder: saved/Polyvore_519/NiPCBPR/result/   #test results save folder
