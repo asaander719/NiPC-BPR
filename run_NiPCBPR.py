@@ -258,6 +258,13 @@ def main_worker(gpu, ngpus_per_node, argss):
     elif args.arch == 'GPBPR':
         from Models.BPRs.GPBPR import GPBPR
         model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+    elif args.arch == 'BPR':
+        from Models.BPRs.BPR import BPR
+        model = BPR(args.user_num, args.item_num)
+    elif args.arch == 'VTBPR':
+        from Models.BPRs.VTBPR import VTBPR
+        model = VTBPR(args.user_num, args.item_num) 
+
     optimizer = Adam([{'params': model.parameters(),'lr': args.base_lr, "weight_decay": args.wd}])
 
     if main_process():
