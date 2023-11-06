@@ -131,7 +131,7 @@ class GPBPR(Module):
                 text_ik = torch.sum(I_text_latent * K_text_latent, dim=-1)        
 
         if self.with_visual and self.with_text:
-            if arg.b_PC:
+            if self.arg.b_PC:
                 cuj = self.vtbpr(Us, Js, J_visual_latent_p, J_text_latent_p) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, K_visual_latent_p, K_text_latent_p)
             else:
@@ -144,7 +144,7 @@ class GPBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
 
         if self.with_visual and not self.with_text:
-            if arg.b_PC:
+            if self.arg.b_PC:
                 cuj = self.vtbpr(Us, Js, J_visual_latent_p, None) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, K_visual_latent_p, None)
             else:
@@ -157,7 +157,7 @@ class GPBPR(Module):
             pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
         
         if not self.with_visual and self.with_text:
-            if arg.b_PC:
+            if self.arg.b_PC:
                 cuj = self.vtbpr(Us, Js, None, J_text_latent_p) #torch.Size(bs)
                 cuk = self.vtbpr(Us, Ks, None, K_text_latent_p)
             else:

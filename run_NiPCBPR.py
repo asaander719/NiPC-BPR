@@ -255,6 +255,9 @@ def main_worker(gpu, ngpus_per_node, argss):
     if args.arch == 'NiPCBPR':
         from Models.BPRs.NiPCBPR import NiPCBPR
         model = NiPCBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+    elif args.arch == 'GPBPR':
+        from Models.BPRs.GPBPR import GPBPR
+        model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
     optimizer = Adam([{'params': model.parameters(),'lr': args.base_lr, "weight_decay": args.wd}])
 
     if main_process():
