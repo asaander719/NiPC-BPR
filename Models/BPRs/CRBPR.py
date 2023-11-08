@@ -65,19 +65,6 @@ class GPBPR(Module):
         self.s_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.s_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
-         #for iPC space
-        self.iPC_visual_nn = Sequential(
-            Linear(arg.visual_feature_dim, self.hidden_dim),
-            nn.Sigmoid())
-        self.iPC_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
-        self.iPC_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
-
-        self.iPC_text_nn = Sequential(
-            Linear(100 * arg.textcnn_layer, self.hidden_dim),
-            nn.Sigmoid())
-        self.iPC_text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
-        self.iPC_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
-
          #for IC space
         self.s3_visual_nn = Sequential(
             Linear(arg.visual_feature_dim, self.hidden_dim),

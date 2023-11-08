@@ -264,6 +264,9 @@ def main_worker(gpu, ngpus_per_node, argss):
     elif args.arch == 'VTBPR':
         from Models.BPRs.VTBPR import VTBPR
         model = VTBPR(args.user_num, args.item_num) 
+    elif args.arch == 'CRBPR':
+        from Models.BPRs.CRBPR import CRBPR
+        model = CRBPR(args, embedding_weight, visual_features_tensor, text_features_tensor) 
 
     optimizer = Adam([{'params': model.parameters(),'lr': args.base_lr, "weight_decay": args.wd}])
 
