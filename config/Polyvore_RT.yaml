@@ -25,7 +25,7 @@ TRAIN:
   visual_feature_dim: 2048
   with_visual: True
   with_text: True
-  train_gpu: [4]
+  train_gpu: [0]
   base_lr: 0.001 # learning rate
   wd: 0.0001 # weight decay
   power: 0.9
@@ -67,8 +67,9 @@ Distributed:
 TEST:
   # test_sub_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
   test_batch_size: 1024
-  test_gpu: [4]
+  test_gpu: [0]
   has_prediction: False # has prediction already or not
   model_path: saved/Polyvore_519/NiPCBPR_RT/train_epoch_15.pth    # evaluation model path
   save_folder: saved/Polyvore_519/NiPCBPR_RT/result  #test results save folder
   test_distributed: False
+  f_tset : True

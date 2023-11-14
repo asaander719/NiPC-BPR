@@ -82,10 +82,103 @@ def Get_Data(train_data_file):
     popular_tops = list(popular_tops.keys())
     return user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops
 
+class F_TEST():
+    """Performance comparison under different product interaction frequencies"""
+    def __init__(self, args):
+        self.args = args
+        self.train_df = pd.read_csv(args.train_data,header=None).astype('int')
+        self.test_df = pd.read_csv(args.test_data,header=None).astype('int')
+        self.train_df.columns = ["user_idx", "top_idx", "pos_bottom_idx", "neg_bottom_idx"]
+        self.train_bf_df = self.train_df["pos_bottom_idx"].value_counts().reset_index()
+        self.train_bf_df.columns = ["pos_bottom_idx","frequent"]
+        self.bottom_num = self.train_df["pos_bottom_idx"].nunique()
+
+    def get_train_freq_list(self):
+        f_0_2_df = self.train_bf_df[self.train_bf_df["frequent"] <= 2]
+        f_0_2_list = list(f_0_2_df["pos_bottom_idx"])
+        # logger.info('Unique Num of f-> [0,2] in training:{}'.format(len(f_0_2_list)))
+        f_3_5_df = self.train_bf_df[self.train_bf_df["frequent"] >2]
+        f_3_5_df = f_3_5_df[f_3_5_df["frequent"] <= 5]
+        f_3_5_list = list(f_3_5_df["pos_bottom_idx"])
+        # logger.info('Unique Num of f-> [3,5] in training:{}'.format(len(f_3_5_list)))
+        f_6_10_df = self.train_bf_df[self.train_bf_df["frequent"] >5]
+        f_6_10_df = f_6_10_df[f_6_10_df["frequent"] <= 10]
+        f_6_10_list = list(f_6_10_df["pos_bottom_idx"])
+        # logger.info('Unique Num of f-> [6,10] in training:{}'.format(len(f_6_10_list)))
+        f_11___df = self.train_bf_df[self.train_bf_df["frequent"] > 10]
+        f_11___list = list(f_11___df["pos_bottom_idx"])
+        # logger.info('Unique Num of f-> [11,) in training:{}'.format(len(f_11___list)))
+        return f_0_2_list, f_3_5_list, f_6_10_list, f_11___list
+
+    def get_freq_test(self, bottom_list):
+        result = []
+        with open(self.args.test_data,'r') as fp:
+            for line in fp:
+                data = line.strip().split(',')
+                data = [int(i) for i in data]
+                i,t,pb,nb = data
+                if pb in bottom_list:
+                    result.append(data)
+        return result
+
+    def get_f_0_2(self, bottom_list):
+        result = []
+        train_bottom = list(self.train_df["pos_bottom_idx"].unique())
+        with open(self.args.test_data,'r') as fp:
+            for line in fp:
+                data = line.strip().split(',')
+                data = [int(i) for i in data]
+                i,t,pb,nb = data
+                if pb in bottom_list or pb not in train_bottom:
+                    result.append(data)
+        return result
+
+    def f_evaluate(self, model, f_loader, f_len):      
+        model.eval()
+        end = time.time()
+        pos = 0
+        for i, aBatch in enumerate(f_loader):
+            aBatch = [x.cuda(non_blocking=True) for x in aBatch]
+            output = model.forward(aBatch, train=False)          
+            pos += float(torch.sum(output.ge(0)))
+        AUC = pos/f_len
+        return AUC, pos
+
+def Simple_Load_Data(args, data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, 
+        popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor):
+    data_ori  = torch.LongTensor(data_ori)
+    loaded_data = Load_Data(args, data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+    loaded_loader = torch.utils.data.DataLoader(loaded_data, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+    t_len = len(loaded_data)
+    return loaded_loader, t_len 
+
+def test(model, test_loader, t_len):
+    logger.info('>>>>>>>>>>>>>>>> Start Test >>>>>>>>>>>>>>>>')
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    model.eval()
+    end = time.time()
+    pos = 0
+    for i, aBatch in enumerate(test_loader):
+        data_time.update(time.time() - end)
+        aBatch = [x.cuda(non_blocking=True) for x in aBatch]
+        output = model.forward(aBatch, train=False)          
+        pos += float(torch.sum(output.ge(0)))
+    AUC = pos/t_len
+    batch_time.update(time.time() - end)
+    end = time.time()
+    logger.info('Test: [{}/{}] '
+                'Right NUM {Right_NUM:.2f}. '
+                'Accuracy {accuracy:.4f}.'.format(i + 1, len(test_loader),
+                                                    Right_NUM = pos,
+                                                    accuracy=AUC))
+    logger.info('<<<<<<<<<<<<<<<<< End Test <<<<<<<<<<<<<<<<<')
+
 def main():
     global args, logger
     args = get_parser()
     logger = get_logger()
+    Fre_TEST = F_TEST(args)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(str(x) for x in args.test_gpu)
     logger.info(args)
     logger.info("=> loading features ...")
@@ -113,10 +206,11 @@ def main():
 
     user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops = Get_Data(args.train_data) 
     test_data_ori = load_csv_data(args.test_data)
-    test_data_ori  = torch.LongTensor(test_data_ori)
-    test_data = Load_Data(args, test_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
-    t_len = len(test_data)
+    # test_data_ori  = torch.LongTensor(test_data_ori)
+    # test_data = Load_Data(args, test_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+    # test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.test_batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+    # t_len = len(test_data)
+    test_loader, t_len = Simple_Load_Data(args, test_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
     print("test data len:", t_len)
     # names = [line.rstrip('\n') for line in open(args.names_path)]
 
@@ -137,27 +231,43 @@ def main():
 
         test(model, test_loader, t_len)
 
-def test(model, test_loader, t_len):
-    logger.info('>>>>>>>>>>>>>>>> Start Test >>>>>>>>>>>>>>>>')
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    model.eval()
-    end = time.time()
-    pos = 0
-    for i, aBatch in enumerate(test_loader):
-        data_time.update(time.time() - end)
-        aBatch = [x.cuda(non_blocking=True) for x in aBatch]
-        output = model.forward(aBatch, train=False)          
-        pos += float(torch.sum(output.ge(0)))
-    AUC = pos/t_len
-    batch_time.update(time.time() - end)
-    end = time.time()
-    logger.info('Test: [{}/{}] '
-                'Right NUM {Right_NUM:.2f}. '
-                'Accuracy {accuracy:.4f}.'.format(i + 1, len(test_loader),
-                                                    Right_NUM = pos,
-                                                    accuracy=AUC))
-    logger.info('<<<<<<<<<<<<<<<<< End Test <<<<<<<<<<<<<<<<<')
+        if args.f_tset:
+            logger.info('>>>>>>>> Start Evaluate under different product interaction frequencies >>>>>>>')
+            batch_time = AverageMeter()
+            data_time = AverageMeter()
+            f_0_2_list, f_3_5_list, f_6_10_list, f_11___list = Fre_TEST.get_train_freq_list()
+            f_0_2_test = Fre_TEST.get_f_0_2(f_0_2_list)
+            f_3_5_test = Fre_TEST.get_freq_test(f_3_5_list)
+            f_6_10_test = Fre_TEST.get_freq_test(f_6_10_list)
+            f_11___test = Fre_TEST.get_freq_test(f_11___list)
 
+            f_0_2, f_0_2_len = Simple_Load_Data(args, f_0_2_test, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+            # logger.info('f_0_2_len:{}'.format(f_0_2_len))
+            f_3_5, f_3_5_len = Simple_Load_Data(args, f_3_5_test, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+            # logger.info('f_3_5_len:{}'.format(f_3_5_len))
+            f_6_10, f_6_10_len = Simple_Load_Data(args, f_6_10_test, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+            # logger.info('f_6_10_len:{}'.format(f_6_10_len))
+            f_11__, f_11___len = Simple_Load_Data(args, f_11___test, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+            # logger.info('f_11___len:{}'.format(f_11___len))
+
+            f_0_2_auc, f_0_2_num = Fre_TEST.f_evaluate(model, f_0_2, f_0_2_len)
+            logger.info('Evaluation AUC of f-> [0, 2]:{accuracy:.4f}'.format(accuracy= f_0_2_auc))
+            # print("f_0_2_auc: %.4f, pos_f_0_2_num: %d"%(f_0_2_auc, f_0_2_num))
+
+            f_3_5_auc, f_3_5_num = Fre_TEST.f_evaluate(model, f_3_5,f_3_5_len)
+            logger.info('Evaluation AUC of f-> [3, 5]:{accuracy:.4f}'.format(accuracy= f_3_5_auc))
+            # print("f_3_5_auc: %.4f, pos_f_3_5_num: %d"%(f_3_5_auc, f_3_5_num))
+
+            f_6_10_auc, f_6_10_num = Fre_TEST.f_evaluate(model, f_6_10,f_6_10_len)
+            logger.info('Evaluation AUC of f-> [6, 10]:{accuracy:.4f}'.format(accuracy= f_6_10_auc))
+            # print("f_6_10_auc: %.4f, pos_f_6_10_num: %d"%(f_6_10_auc, f_6_10_num))
+
+            f_11__auc, f_11__num = Fre_TEST.f_evaluate(model, f_11__, f_11___len)
+            logger.info('Evaluation AUC of f-> [11, ~]:{accuracy:.4f}'.format(accuracy= f_11__auc))
+            # print("f_11__auc: %.4f, pos_f_11__num: %d"%(f_11__auc, f_11__num))
+
+            logger.info('<<<<<<<<<<<<<<<<< End  <<<<<<<<<<<<<<<<<')
+
+        
 if __name__ == '__main__':
     main()

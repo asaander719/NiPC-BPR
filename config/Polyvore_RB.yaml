@@ -72,3 +72,4 @@ TEST:
   model_path: saved/Polyvore_519/NiPCBPR/train_epoch_11.pth    # evaluation model path
   save_folder: saved/Polyvore_519/NiPCBPR/result  #test results save folder
   test_distributed: False
+  f_tset : True
