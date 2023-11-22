@@ -53,10 +53,10 @@ Or you can modify the corresponding path name.
 ## Citation
 If you find our work helpful, please kindly cite our research paper:
 ```
-@inproceedings{liao2023nipcbpr,
+@inproceedings{liao2023recommendation,
   title={Recommendation of Mix-and-Match Clothing by Modeling Indirect Personal Compatibility},
-  author={Shuiying Liao, Yujuan Ding and P. Y. Mok},
-  booktitle={Proceedings of the 2023 ACM International Conference on Multimedia Retrieval (ICMR)},
+  author={Liao, Shuiying and Ding, Yujuan and Mok, PY},
+  booktitle={Proceedings of the 2023 ACM International Conference on Multimedia Retrieval},
   pages={560--564},
   year={2023}
 }
