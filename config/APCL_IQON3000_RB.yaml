@@ -29,7 +29,7 @@ TRAIN:
   textcnn_layer: 4
   with_visual: True
   with_text: True
-  train_gpu: [0]
+  train_gpu: 1
   base_lr: 0.001 # learning rate
   wd: 0.00001 # weight decay
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top

@@ -29,8 +29,8 @@ import pandas as pd
 
 def get_parser(): 
     parser = argparse.ArgumentParser(description='APCL')
-    parser.add_argument('--config', type=str, default='config/IQON3000_RB.yaml', help='config file')
-    parser.add_argument('opts', help='see config/IQON3000_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('--config', type=str, default='config/APCL_IQON3000_RB.yaml', help='config file')
+    parser.add_argument('opts', help='see config/APCL_IQON3000_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)
@@ -49,7 +49,7 @@ def get_logger():
     logger.addHandler(handler)
     return logger
 
-def training(device, w_infoNCE, model, train_data_loader, device, optimizer, epoch):
+def training(device, w_infoNCE, model, train_data_loader, optimizer, epoch):
     model.train()
     loss_scalar = 0.
     pos = 0
@@ -186,7 +186,7 @@ def main():
         else:          
             logger.info("=> no checkpoint found at '{}'".format(args.resume)) 
 
-    user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops = Get_Data(args.train_data) 
+    user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, bottom_user_dict, popular_users = Get_Data(args.train_data) 
 
     train_data_ori = load_csv_data(args.train_data)
     train_data_ori  = torch.LongTensor(train_data_ori)
@@ -217,21 +217,15 @@ def main():
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')#动态调整学习率
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.97 ** epoch) 
 
-    curr_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print("start training:", curr_time)
-
     for epoch in range(args.start_epoch, args.epochs):
         model.train()
         epoch_log = epoch + 1
-        if args.distributed:
-            train_sampler.set_epoch(epoch)
-        loss_train = train(train_loader, model, optimizer, epoch)
+        loss_train, train_auc_num  = training(args.device, args.w_infoNCE, model, train_loader, optimizer, epoch)
         scheduler.step()
 
-        if main_process():
-            writer.add_scalar('loss_train', loss_train, epoch_log)
+        writer.add_scalar('loss_train', loss_train, epoch_log)
 
-        if (epoch_log % args.save_freq == 0) and main_process():
+        if (epoch_log % args.save_freq == 0):
             filename = args.save_path + '/train_epoch_' + str(epoch_log) + '.pth'
             logger.info('Saving checkpoint to: ' + filename)
             torch.save({'epoch': epoch_log, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}, filename)
@@ -240,8 +234,7 @@ def main():
                 os.remove(deletename)
         if args.evaluate:
             AUC, pos = validate(model, val_loader, v_len)
-            if main_process():
-                writer.add_scalar('AUC', AUC, epoch_log)
+            writer.add_scalar('AUC', AUC, epoch_log)
                 
             early_stopping(AUC, model)
             if early_stopping.early_stop:
