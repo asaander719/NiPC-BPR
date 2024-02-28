@@ -235,6 +235,29 @@ class APCL(Module):
             # sim att
             if self.att:
                 if self.args.dataset == 'IQON3000':
+                    text_all_u_pb = self.text_embedding(self.text_features[all_u_pb]) #'[64, 2, 83] ->[64, 2, 83, 300]
+                    bs,seq,h,w = text_all_u_pb.size()
+                    text_all_u_pb_reshape = text_all_u_pb.reshape(bs*seq,h,w) #bs*seq, h,w
+                    
+                    all_u_pb_text_fea = self.textcnn(text_all_u_pb_reshape.unsqueeze(1))  #bs*seq, 1, h,w -> bs*seq, 400(100*layers) 
+                    all_u_pb_text_fea_split = all_u_pb_text_fea.reshape(bs, seq, all_u_pb_text_fea.shape[-1]) #bs, seq, 400
+
+                    t_sim_bs_out = self.T_attention.forward(all_u_pb_text_fea_split) #bs, seq, 400 -> (bs, 400)
+                    all_u_pb_text = self.att_text_nn(t_sim_bs_out) #bs,512
+                    text_J_u = self.att_text_nn(J_text_fea)
+                    text_K_u = self.att_text_nn(K_text_fea)
+
+                    if self.with_Nor:
+                        all_u_pb_text = F.normalize(all_u_pb_text,dim=0)
+                        text_J_u = F.normalize(text_J_u,dim=0)
+                        text_K_u = F.normalize(text_K_u,dim=0)
+
+                    if self.cos:
+                        Text_UuJ = F.cosine_similarity(all_u_pb_text, text_J_u, dim=-1)
+                        Text_UuK = F.cosine_similarity(all_u_pb_text, text_K_u, dim=-1)
+                    else:
+                        Text_UuJ = torch.sum(all_u_pb_text * text_J_u, dim=-1)
+                        Text_UuK = torch.sum(all_u_pb_text * text_K_u, dim=-1)
 
                 elif self.args.dataset == 'Polyvore':
                     text_all_u_pb = self.text_features[all_u_pb]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])

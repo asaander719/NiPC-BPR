@@ -14,9 +14,11 @@ DATA:
   valid_data: dataset/IQON3000/data/valid_indexed_top.csv
   test_data: dataset/IQON3000/data/test_indexed_top.csv
 
+  u_us_cf_dict_top: dataset/IQON3000/data/u_us_cf_top.json
+  i_us_cf_dict_top: dataset/IQON3000/data/i_us_cf_top.json
 
 TRAIN:
-  arch: NiPCBPR  
+  arch: APCL
   dataset: IQON3000
   epochs: 80
   start_epoch: 0
@@ -30,34 +32,37 @@ TRAIN:
   textcnn_layer: 4
   with_visual: True
   with_text: True
-  train_gpu: [6]
+  train_gpu: 0
   base_lr: 0.001 # learning rate
   wd: 0.00001 # weight decay
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top
   patience: 5 # for early stop
   with_Nor: True # Feature Scaling
   b_PC: True # project bottom into personalization and conpatibility spaces separately
-  UC: False # user preference consistency branch
-  IC: False # item compatibility consistency branch
-  iPC: True # indirect personal compatibility branch
   cos: True # using cosine similairity calculate distance
   weight:  # path to initial weight (default: none)
   resume:  # 
-  UC_w: 4
-  IC_w: 4
   weight_P: 0.3
-  iPC_w: 3
   his_select_t: False # using textual information to help to select historical bottoms
   popular_padding: True # using popular items to padding those historiacl interactions less than default number
   repeated_interact: False # only contain one interaction for those bottoms chosed by same top/user more than twice for history selection
-  save_path: saved/IQON3000/NiPCBPR_RT
+  save_path: saved/IQON3000/APCL
   evaluate: True
   batch_size_val: 1024
   start_epoch: 0
   num_his: 2
   num_interact: 2
-  iPC_v_w: 0.5
   save_freq: 1
+  user_num: 300 
+  top_u: 2 # top ranked user number in user similarity calculation
+  att: True # suing self_att
+  with_self_his: False 
+  u_pb_num: 2 # user chosed top-ranked matching items
+  uu_w: 1 # weight of user similarity branch
+  uu_v_w: 0.5 # weight of visual modality
+  use_weighted_loss: False # using weighted infoNCE loss
+  temperature: 0.1 
+  w_infoNCE: 0.05 #weight of infoNCE LOSS
 
 Distributed:
   dist_url: tcp://127.0.0.1:6789
@@ -68,9 +73,9 @@ Distributed:
 
 TEST:
   test_batch_size: 1024
-  test_gpu: [6]
+  test_gpu: [0]
   has_prediction: False # has prediction already or not
-  model_path: saved/IQON3000/NiPCBPR_RT/train_epoch_35.pth    # evaluation model path
-  save_folder: saved/Polyvore_519/NiPCBPR_RT/result/   #test results save folder
+  model_path: saved/IQON3000/APCL/   # evaluation model path
+  save_folder: saved/IQON3000/APCL/result/   #test results save folder
   test_distributed: False
   f_tset : True

@@ -49,20 +49,15 @@ def get_logger():
     logger.addHandler(handler)
     return logger
 
-def training(device, w_infoNCE, model, train_data_loader, device, optimizer):
-    r"""
-        using data from Args to train model
-        Args:
-            mode: -
-            train_data_loader: mini-batch iteration
-            device: device on which model train
-            visual_features: look up table for item visual features
-            text_features: look up table for item textural features
-            optimizer: optimizer of model
-    """
+def training(device, w_infoNCE, model, train_data_loader, device, optimizer, epoch):
     model.train()
     loss_scalar = 0.
     pos = 0
+    data_time = AverageMeter()
+    loss_meter = AverageMeter()
+    end = time.time()
+    max_iter = args.epochs * len(train_data_loader)
+
     for iteration, aBatch in enumerate(train_data_loader):
         aBatch = [x.to(device) for x in aBatch]
         # output = model.fit(aBatch[0], train=True, weight=False)  
@@ -74,18 +69,39 @@ def training(device, w_infoNCE, model, train_data_loader, device, optimizer):
         loss.backward()
         optimizer.step()
         loss_scalar += loss.detach().cpu()
-        
+
+    batch_time.update(time.time() - end)
+    end = time.time()
+    logger.info('Epoch: [{}/{}][{}/{}] '
+                'Data {data_time.val:.3f} ({data_time.avg:.3f}) '
+                'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
+                'Loss {loss_meter:.4f} '
+                'AUC_NUM: {AUC_NUM: }'.format(epoch+1, args.epochs, i + 1, len(train_data_loader),
+                                                    batch_time=batch_time,
+                                                    data_time=data_time,
+                                                    loss_meter=loss_scalar/iteration,
+                                                    AUC_NUM=pos))    
     return loss_scalar/iteration, pos
 
-def evaluating(device, model, testloader, t_len):
+
+def validate(device, model, val_loader, t_len):
+    logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
     model.eval()
+    end = time.time()
     pos = 0
-    for iteration, aBatch in enumerate(testloader):
+    for i, aBatch in enumerate(val_loader):
         aBatch = [x.to(device) for x in aBatch]
         output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=False)          
         pos += float(torch.sum(output.ge(0)))
-
-    return pos/t_len
+    AUC = pos/t_len
+    batch_time.update(time.time() - end)
+    end = time.time()
+    logger.info('Test: [{}/{}] '
+                'Accuracy {accuracy:.4f}.'.format(i + 1, len(val_loader),
+                                                    accuracy=AUC))
+    return AUC, pos
 
 def Get_Data(train_data_file):
     user_history = pd.read_csv(train_data_file, header=None).astype('int')
@@ -95,13 +111,10 @@ def Get_Data(train_data_file):
     top_bottoms_dict = user_history.groupby("top_idx")["pos_bottom_idx"].agg(list).to_dict()
     popular_bottoms = user_history["pos_bottom_idx"].value_counts().to_dict()
     popular_bottoms = list(popular_bottoms.keys())
-
     popular_tops = user_history["top_idx"].value_counts().to_dict()
     popular_tops = list(popular_tops.keys())
-
     popular_users = user_history["user_idx"].value_counts().to_dict()
     popular_users = list(popular_users.keys())
-
     bottom_user_dict = user_history.groupby("pos_bottom_idx")["user_idx"].agg(list).to_dict()
     return user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, bottom_user_dict, popular_users
 
@@ -135,9 +148,9 @@ def main():
     elif args.arch == 'NiPCBPR':
         from Models.BPRs.NiPCBPR import NiPCBPR
         model = NiPCBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
-    elif args.arch == 'GPBPR':
-        from Models.BPRs.GPBPR import GPBPR
-        model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+    elif args.arch == 'model':
+        from Models.BPRs.model import model
+        model = model(args, embedding_weight, visual_features_tensor, text_features_tensor)
     elif args.arch == 'BPR':
         from Models.BPRs.BPR import BPR
         model = BPR(args.user_num, args.item_num)
@@ -177,8 +190,63 @@ def main():
 
     train_data_ori = load_csv_data(args.train_data)
     train_data_ori  = torch.LongTensor(train_data_ori)
-    train_data = Load_Data(args, train_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+    train_data = Load_Data(args, train_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
+        bottom_user_dict, popular_users, ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight)
+    train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    train_len = len(train_data_ori)
 
+    test_data_ori = load_csv_data(args.test_data)
+    test_data_ori  = torch.LongTensor(test_data_ori)
+    test_data = Load_Data(args, test_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
+        bottom_user_dict, popular_users, ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight)
+    test_loader = DataLoader(test_data, batch_size=args.test_batch_size, shuffle=False)
+    t_len = len(test_data_ori)
+
+    valid_data_ori = load_csv_data(args.valid_data)
+    valid_data_ori  = torch.LongTensor(valid_data_ori)
+    valid_data = Load_Data(args, valid_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
+        bottom_user_dict, popular_users, ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight)
+    valid_loader = DataLoader(valid_data, batch_size=args.test_batch_size, shuffle=False)
+    v_len = len(valid_data_ori)
+
+    model_parameters = filter(lambda p: p.requires_grad, model.parameters())
+    params = sum([np.prod(p.size()) for p in model_parameters])
+    print("model para. Num:", params)
+  
+    early_stopping = EarlyStopping(patience=args.patience, verbose=True)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')#动态调整学习率
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.97 ** epoch) 
+
+    curr_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print("start training:", curr_time)
+
+    for epoch in range(args.start_epoch, args.epochs):
+        model.train()
+        epoch_log = epoch + 1
+        if args.distributed:
+            train_sampler.set_epoch(epoch)
+        loss_train = train(train_loader, model, optimizer, epoch)
+        scheduler.step()
+
+        if main_process():
+            writer.add_scalar('loss_train', loss_train, epoch_log)
+
+        if (epoch_log % args.save_freq == 0) and main_process():
+            filename = args.save_path + '/train_epoch_' + str(epoch_log) + '.pth'
+            logger.info('Saving checkpoint to: ' + filename)
+            torch.save({'epoch': epoch_log, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}, filename)
+            if epoch_log / args.save_freq > 2:
+                deletename = args.save_path + '/train_epoch_' + str(epoch_log - args.save_freq * 2) + '.pth'
+                os.remove(deletename)
+        if args.evaluate:
+            AUC, pos = validate(model, val_loader, v_len)
+            if main_process():
+                writer.add_scalar('AUC', AUC, epoch_log)
+                
+            early_stopping(AUC, model)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break 
 
 if __name__ == '__main__':
     main()
