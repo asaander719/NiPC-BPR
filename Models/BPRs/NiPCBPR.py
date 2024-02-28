@@ -82,7 +82,7 @@ class NiPCBPR(Module):
         if self.with_visual:
             self.visual_features = visual_features.cuda()
         if self.with_text:
-            self.max_sentense_length = args.max_sentence
+            # self.max_sentense_length = args.max_sentence
             self.text_features = text_features.cuda()
             self.text_embedding = Embedding.from_pretrained(embedding_weight, freeze=False)
             self.textcnn = TextCNN(args.textcnn_layer, sentence_size=(args.max_sentence, args.text_feature_dim), output_size=self.hidden_dim)

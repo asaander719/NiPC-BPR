@@ -30,8 +30,8 @@ from torch.utils.data import DataLoader, Dataset
 
 def get_parser(): 
     parser = argparse.ArgumentParser(description='APCL')
-    parser.add_argument('--config', type=str, default='config/APCL_IQON3000_RB.yaml', help='config file')
-    parser.add_argument('opts', help='see config/APCL_IQON3000_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
+    parser.add_argument('--config', type=str, default='config/APCL_Polyvore_RB.yaml', help='config file')
+    parser.add_argument('opts', help='see config/APCL_Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)

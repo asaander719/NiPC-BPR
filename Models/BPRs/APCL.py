@@ -1,3 +1,4 @@
+# liao shuiying 2/28/2024
 import torch
 from torch import load, sigmoid, cat, rand, bmm, mean, matmul
 from torch.nn.functional import logsigmoid
@@ -11,6 +12,7 @@ from util.utils import get_parser
 from Models.BPRs.BPR import BPR
 from Models.BPRs.VTBPR import VTBPR
 from Models.BPRs.TextCNN import TextCNN
+
 
 class SelfAttention(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -41,7 +43,7 @@ class SelfAttention(nn.Module):
 
 class APCL(Module):
     def __init__(self, args, embedding_weight, visual_features, text_features):        
-        super(NattBPR, self) .__init__()
+        super(APCL, self) .__init__()
         self.args = args
         self.weight_P = args.weight_P
         self.hidden_dim = args.hidden_dim
@@ -109,12 +111,13 @@ class APCL(Module):
         self.att_text_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
         
         if self.with_visual:
-            self.visual_features = visual_features.cuda()
-        if self.with_text:
-            self.max_sentense_length = args.max_sentence
-            self.text_features = text_features.cuda()
-            self.text_embedding = Embedding.from_pretrained(embedding_weight, freeze=False)
-            self.textcnn = TextCNN(args.textcnn_layer, sentence_size=(args.max_sentence, args.text_feature_dim), output_size=self.hidden_dim)
+            self.visual_features = visual_features.to(args.device)
+        if self.with_text:    
+            self.text_features = text_features.to(args.device)
+            if self.args.dataset == 'IQON3000':
+                # self.max_sentense_length = args.max_sentence
+                self.text_embedding = Embedding.from_pretrained(embedding_weight, freeze=False)
+                self.textcnn = TextCNN(args.textcnn_layer, sentence_size=(args.max_sentence, args.text_feature_dim), output_size=self.hidden_dim)
 
         self.vtbpr = VTBPR(self.user_num, self.item_num, hidden_dim=self.hidden_dim, 
             theta_text=self.with_text, theta_visual=self.with_visual, with_Nor=True, cos=True)
@@ -140,7 +143,7 @@ class APCL(Module):
         ub_inter_weight = batch[5]
         tb_inter_weight = batch[6]
         bs = len(Us)
-        
+        # print(self.visual_features.device)
         if self.with_visual:
             vis_I = self.visual_features[Is] #bs,visual_feature_dim = 2048 = torch.Size([256, 2048])
             vis_J = self.visual_features[Js]
@@ -189,7 +192,7 @@ class APCL(Module):
       
         if self.with_text:
             if self.args.dataset == 'IQON3000':
-                text_I = self.text_embedding(self.text_features[Is]) #256,83,300
+                text_I = self.text_embedding(self.text_features[Is]) #256,83,300 text_I = self.text_embedding(self.text_features[Is]) 
                 text_J = self.text_embedding(self.text_features[Js])
                 text_K = self.text_embedding(self.text_features[Ks])
 
@@ -312,12 +315,12 @@ class APCL(Module):
             p_ij = (visual_ij + text_ij)
             p_ik = (visual_ik + text_ik)
 
-            # pred = self.uniform_value * p_ij + (1 - self.uniform_value) * cuj - (self.uniform_value * p_ik + (1 - self.uniform_value) * cuk)
+            # pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
             if self.use_weighted_loss:
                 pred = ub_inter_weight * (p_ij - p_ik) + tb_inter_weight * (cuj - cuk)
 
             else:
-                pred = self.uniform_value * (p_ij - p_ik) + (1 - self.uniform_value) * (cuj - cuk)
+                pred = self.weight_P * (p_ij - p_ik) + (1 - self.weight_P) * (cuj - cuk)
 
             if self.att:
                 U_BuJ = self.args.uu_w * (self.args.uu_v_w * Visual_UuJ + (1-self.args.uu_v_w) * Text_UuJ)
@@ -360,12 +363,12 @@ class APCL(Module):
             p_ij = visual_ij 
             p_ik = visual_ik 
 
-            # pred = self.uniform_value * p_ij + (1 - self.uniform_value) * cuj - (self.uniform_value * p_ik + (1 - self.uniform_value) * cuk)
+            # pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
             if self.use_weighted_loss:
                 pred = ub_inter_weight * (p_ij - p_ik) + tb_inter_weight * (cuj - cuk)
 
             else:
-                pred = self.uniform_value * (p_ij - p_ik) + (1 - self.uniform_value) * (cuj - cuk)
+                pred = self.weight_P * (p_ij - p_ik) + (1 - self.weight_P) * (cuj - cuk)
 
             if self.att:
                 U_BuJ = self.args.uu_w *  Visual_UuJ 
@@ -385,12 +388,12 @@ class APCL(Module):
             p_ij = text_ij
             p_ik = text_ik
 
-            # pred = self.uniform_value * p_ij + (1 - self.uniform_value) * cuj - (self.uniform_value * p_ik + (1 - self.uniform_value) * cuk)
+            # pred = self.weight_P * p_ij + (1 - self.weight_P) * cuj - (self.weight_P * p_ik + (1 - self.weight_P) * cuk)
             if self.use_weighted_loss:
                 pred = ub_inter_weight * (p_ij - p_ik) + tb_inter_weight * (cuj - cuk)
 
             else:
-                pred = self.uniform_value * (p_ij - p_ik) + (1 - self.uniform_value) * (cuj - cuk)
+                pred = self.weight_P * (p_ij - p_ik) + (1 - self.weight_P) * (cuj - cuk)
 
             if self.att:
                 U_BuJ = self.args.uu_w * Text_UuJ

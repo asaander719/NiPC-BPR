@@ -63,14 +63,23 @@ def load_csv_data(train_data_path):
             result.append(t)
     return result
 
-def load_embedding_weight(textural_embedding_matrix):
-    jap2vec = torch.load(textural_embedding_matrix)
-    embeding_weight = []
-    for jap, vec in jap2vec.items():
-        embeding_weight.append(vec.tolist())
-    embeding_weight.append(torch.zeros(300))
-    embedding_weight = torch.tensor(embeding_weight).cuda()
-    return embedding_weight
+# def load_embedding_weight(textural_embedding_matrix):
+#     jap2vec = torch.load(textural_embedding_matrix)
+#     embeding_weight = []
+#     for jap, vec in jap2vec.items():
+#         embeding_weight.append(vec.tolist())
+#     embeding_weight.append(torch.zeros(300))
+#     embedding_weight = torch.tensor(embeding_weight).cuda()
+#     return embedding_weight
+
+# def load_embedding_weight(textural_embedding_matrix, device):
+#     jap2vec = torch.load(textural_embedding_matrix)
+#     embeding_weight = []
+#     for jap, vec in jap2vec.items():
+#         embeding_weight.append(vec.tolist())
+#     embeding_weight.append(torch.zeros(300))
+#     embedding_weight = torch.tensor(embeding_weight, device=device)
+#     return embedding_weight
 
 def reindex_features(visual_features_ori, text_features_ori, item_map, args):
     visual_features = []
