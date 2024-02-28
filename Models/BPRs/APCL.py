@@ -112,27 +112,20 @@ class APCL(Module):
         
         if self.with_visual:
             self.visual_features = visual_features.to(args.device)
+            self.V_attention = SelfAttention(input_dim= args.visual_feature_dim, output_dim = args.visual_feature_dim)
         if self.with_text:    
             self.text_features = text_features.to(args.device)
             if self.args.dataset == 'IQON3000':
                 # self.max_sentense_length = args.max_sentence
-                self.text_embedding = Embedding.from_pretrained(embedding_weight, freeze=False)
+                self.text_embedding = Embedding.from_pretrained(embedding_weight, freeze=False) #tensor([[23521, 38583, 21480,  ..., 54275, 54275, 54275],...])
                 self.textcnn = TextCNN(args.textcnn_layer, sentence_size=(args.max_sentence, args.text_feature_dim), output_size=self.hidden_dim)
-
+                self.T_attention = SelfAttention(input_dim= 100 * args.textcnn_layer, output_dim = 100 * args.textcnn_layer)
+            else:
+                self.T_attention = SelfAttention(input_dim= args.text_feature_dim, output_dim = args.text_feature_dim)
         self.vtbpr = VTBPR(self.user_num, self.item_num, hidden_dim=self.hidden_dim, 
             theta_text=self.with_text, theta_visual=self.with_visual, with_Nor=True, cos=True)
         print('Module already prepared, {} users, {} items'.format(self.user_num, self.item_num))
         self.bpr = BPR(self.user_num, self.item_num)
-         
-        self.V_attention = SelfAttention(input_dim= args.visual_feature_dim, output_dim = args.visual_feature_dim)
-        self.T_attention = SelfAttention(input_dim= args.text_feature_dim, output_dim = args.text_feature_dim)
-  
-        # self.w1 = torch.nn.Parameter(torch.FloatTensor(1), requires_grad=True)
-        # self.w2 = torch.nn.Parameter(torch.FloatTensor(1), requires_grad=True)
-        # self.w1.data.fill_(1.0)
-        # self.w2.data.fill_(1.0)
-        # self.w1.data.clamp_(0,1)
-        # self.w2.data.clamp_(0,1)
          
     def forward(self, batch, train, **args):
         Us = batch[0] #bs
@@ -192,9 +185,9 @@ class APCL(Module):
       
         if self.with_text:
             if self.args.dataset == 'IQON3000':
-                text_I = self.text_embedding(self.text_features[Is]) #256,83,300 text_I = self.text_embedding(self.text_features[Is]) 
-                text_J = self.text_embedding(self.text_features[Js])
-                text_K = self.text_embedding(self.text_features[Ks])
+                text_I = self.text_embedding(self.text_features[Is].long()) #256,83,300 text_I = self.text_embedding(self.text_features[Is]) 
+                text_J = self.text_embedding(self.text_features[Js].long())
+                text_K = self.text_embedding(self.text_features[Ks].long())
 
                 I_text_fea = self.textcnn(text_I.unsqueeze(1))  #256,400
                 J_text_fea = self.textcnn(text_J.unsqueeze(1))
@@ -238,12 +231,12 @@ class APCL(Module):
             # sim att
             if self.att:
                 if self.args.dataset == 'IQON3000':
-                    text_all_u_pb = self.text_embedding(self.text_features[all_u_pb]) #'[64, 2, 83] ->[64, 2, 83, 300]
-                    bs,seq,h,w = text_all_u_pb.size()
-                    text_all_u_pb_reshape = text_all_u_pb.reshape(bs*seq,h,w) #bs*seq, h,w
+                    text_all_u_pb = self.text_embedding(self.text_features[all_u_pb].long()) #'[64, 2, 83] ->[64, 2, 83, 300]
+                    bs,seq,h,w = text_all_u_pb.size() #64 2 83 300
+                    text_all_u_pb_view = text_all_u_pb.view(bs*seq,h,w) #bs*seq, h,w [128, 83, 300]
                     
-                    all_u_pb_text_fea = self.textcnn(text_all_u_pb_reshape.unsqueeze(1))  #bs*seq, 1, h,w -> bs*seq, 400(100*layers) 
-                    all_u_pb_text_fea_split = all_u_pb_text_fea.reshape(bs, seq, all_u_pb_text_fea.shape[-1]) #bs, seq, 400
+                    all_u_pb_text_fea = self.textcnn(text_all_u_pb_view.unsqueeze(1))  #bs*seq, 1, h,w -> bs*seq, 400
+                    all_u_pb_text_fea_split = all_u_pb_text_fea.view(bs, seq, all_u_pb_text_fea.shape[-1]) #bs, seq, 400
 
                     t_sim_bs_out = self.T_attention.forward(all_u_pb_text_fea_split) #bs, seq, 400 -> (bs, 400)
                     all_u_pb_text = self.att_text_nn(t_sim_bs_out) #bs,512

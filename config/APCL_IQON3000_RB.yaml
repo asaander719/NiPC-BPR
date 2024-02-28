@@ -64,7 +64,7 @@ TRAIN:
 Distributed:
   dist_url: tcp://127.0.0.1:6789
   dist_backend: 'nccl'
-  multiprocessing_distributed: True
+  multiprocessing_distributed: False
   world_size: 1
   rank: 0
 
