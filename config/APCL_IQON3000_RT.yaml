@@ -32,11 +32,13 @@ TRAIN:
   textcnn_layer: 4
   with_visual: True
   with_text: True
-  train_gpu: 0
+  cuda: 0 #gpu number
+  device: 'cuda'
   base_lr: 0.001 # learning rate
   wd: 0.00001 # weight decay
   num_interaction: 2 # choose 2 bottoms that has been chose by the given top
-  patience: 5 # for early stop
+  patience: 8 # for early stop
+  early_stop: True
   with_Nor: True # Feature Scaling
   b_PC: True # project bottom into personalization and conpatibility spaces separately
   cos: True # using cosine similairity calculate distance
@@ -63,6 +65,8 @@ TRAIN:
   use_weighted_loss: False # using weighted infoNCE loss
   temperature: 0.1 
   w_infoNCE: 0.05 #weight of infoNCE LOSS
+  mode: 'RB' #given top, recommend bottom "rt: given bottom, recommend top"
+  wide_evaluate: True
 
 Distributed:
   dist_url: tcp://127.0.0.1:6789
@@ -79,3 +83,6 @@ TEST:
   save_folder: saved/IQON3000/APCL/result/   #test results save folder
   test_distributed: False
   f_tset : True
+  metrics: [recall, ndcg, mrr]
+  k: [5, 10]
+  metric_topk: 10

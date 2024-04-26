@@ -28,17 +28,18 @@ from tqdm import tqdm
 import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 from tool.metrics import *
+from config.configurator import parse_configure
 
-def get_parser(): 
-    parser = argparse.ArgumentParser(description='APCL')
-    parser.add_argument('--config', type=str, default='config/APCL_Polyvore_RB.yaml', help='config file') #APCL_IQON3000_RB.yaml #APCL_Polyvore_RB.yaml
-    parser.add_argument('opts', help='see config/APCL_Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
-    args = parser.parse_args()
-    assert args.config is not None
-    cfg = config.load_cfg_from_cfg_file(args.config)
-    if args.opts is not None:
-        cfg = config.merge_cfg_from_list(cfg, args.opts)
-    return cfg
+# def get_parser(): 
+#     parser = argparse.ArgumentParser(description='APCL')
+#     parser.add_argument('--config', type=str, default='config/APCL_Polyvore_RB.yaml', help='config file') #APCL_IQON3000_RB.yaml #APCL_Polyvore_RB.yaml
+#     parser.add_argument('opts', help='see config/APCL_Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
+#     args = parser.parse_args()
+#     assert args.config is not None
+#     cfg = config.load_cfg_from_cfg_file(args.config)
+#     if args.opts is not None:
+#         cfg = config.merge_cfg_from_list(cfg, args.opts)
+#     return cfg
 
 
 def get_logger():
@@ -70,10 +71,14 @@ def training(device, w_infoNCE, model, train_data_loader, optimizer, epoch):
 
     for iteration, aBatch in enumerate(train_data_loader):
         aBatch = [x.to(device) for x in aBatch]
-        # output = model.fit(aBatch[0], train=True, weight=False)  
-        output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=True)  
+        # output = model.fit(aBatch[0], train=True, weight=False) 
+        if args.arch == 'APCL':
+            output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=True)  
+            loss = (-logsigmoid(output)).sum() + w_infoNCE * (infoNCE_v_loss_pc + infoNCE_t_loss_pc + infoNCE_v_loss_ps + infoNCE_t_loss_ps)
+        else:
+            output = model.forward(aBatch, train=True)
+            loss = (-logsigmoid(output)).sum() 
         pos += float(torch.sum(output.ge(0)))
-        loss = (-logsigmoid(output)).sum() + w_infoNCE * (infoNCE_v_loss_pc + infoNCE_t_loss_pc + infoNCE_v_loss_ps + infoNCE_t_loss_ps)
         iteration += 1
         optimizer.zero_grad()
         loss.backward()
@@ -111,7 +116,7 @@ def validate(device, model, val_loader, t_len): #for wide infer
     grd = [0] * bs
     grd_cnt = [1] * bs
     metrics = {}
-    for topk in [10]: #args.k:
+    for topk in args.k: #args.k:
         metrics[topk] = {}
         REC, MRR, NDCG = get_metrics(grd, grd_cnt, preds.cpu().numpy(), topk)
         metrics[topk]['recall'] = REC
@@ -120,12 +125,11 @@ def validate(device, model, val_loader, t_len): #for wide infer
     # AUC = pos/t_len
     batch_time.update(time.time() - end)
     end = time.time()
-    # logger.info('Test: [{}/{}] '
-    #             'metrics: {accuracy:.4f}.'.format(iteration + 1, len(val_loader),
-    #                                                 accuracy=metrics))
-    logger.info('HR@10: {HIT:.4f}.'.format(HIT=metrics[10]['recall']))
-    logger.info('NDCG@10: {ndcg:.4f}.'.format(ndcg=metrics[10]['ndcg']))
-    logger.info('MRR@10: {mrr:.4f}.'.format(mrr=metrics[10]['mrr']))
+    metric_strings = []
+    for m in args.metrics:
+        for k in args.k:
+            metric_strings.append('{}@{}: {:.4f}'.format(m, k, metrics[k][m]))
+    logger.info(', '.join(metric_strings))
     return metrics, preds
 
 def validate_AUC(device, model, val_loader, t_len): #For AUC infer
@@ -138,7 +142,10 @@ def validate_AUC(device, model, val_loader, t_len): #For AUC infer
     for i, aBatch in enumerate(val_loader):
         data_time.update(time.time() - end)
         aBatch = [x.to(device) for x in aBatch]
-        output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=False)             
+        if args.arch == 'APCL':
+            output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=False) 
+        else:
+            output = model.forward(aBatch, train=False)             
         pos += float(torch.sum(output.ge(0)))
     AUC = pos/t_len
     # return pos/len(testloader)
@@ -184,10 +191,11 @@ def interaction_weight(train_data):
 
 def main():
     global logger, writer, args
-    args = get_parser()
+    # args = get_parser()
+    args = parse_configure()
     logger = get_logger()
     
-    args.device = torch.device("cuda:%s"%args.train_gpu if torch.cuda.is_available() else "cpu")
+    # args.device = torch.device("cuda:%s"%args.cuda if torch.cuda.is_available() else "cpu")
     # logger.info(args)
     logger.info("=> creating model ...")
 
@@ -220,7 +228,7 @@ def main():
     elif args.arch == 'NiPCBPR':
         from Models.BPRs.NiPCBPR import NiPCBPR
         model = NiPCBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
-    elif args.arch == 'model':
+    elif args.arch == 'GPBPR':
         from Models.BPRs.GPBPR import GPBPR
         model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
     elif args.arch == 'BPR':
@@ -236,7 +244,7 @@ def main():
     model.to(args.device)
     
     optimizer = Adam([{'params': model.parameters(),'lr': args.base_lr, "weight_decay": args.wd}])
-    writer = SummaryWriter(args.save_path)
+    # writer = SummaryWriter(args.save_path)
     logger.info(model)
 
     if args.weight:
@@ -296,25 +304,27 @@ def main():
         loss_train, train_auc_num  = training(args.device, args.w_infoNCE, model, train_loader, optimizer, epoch)
         scheduler.step()
 
-        writer.add_scalar('loss_train', loss_train, epoch_log)
+        # writer.add_scalar('loss_train', loss_train, epoch_log)
 
         if (epoch_log % args.save_freq == 0):
-            filename = args.save_path + '/train_epoch_' + str(epoch_log) + '.pth'
+            args.save_path = './saved/' + args.dataset 
+            filename = args.save_path + '/'+ args.arch  + '_' + args.mode  + '_' + str(epoch_log) + '.pth'
             logger.info('Saving checkpoint to: ' + filename)
             torch.save({'epoch': epoch_log, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}, filename)
             if epoch_log / args.save_freq > 2:
-                deletename = args.save_path + '/train_epoch_' + str(epoch_log - args.save_freq * 2) + '.pth'
+                deletename = args.save_path + '/'+ args.arch + '_' + args.mode  + '_' + str(epoch_log - args.save_freq * 2) + '.pth'
                 os.remove(deletename)
 
         metrics, preds = validate(args.device, model, test_loader, t_len)
         if args.evaluate:
             args.wide_evaluate = False
             AUC_v, pos_v = validate_AUC(args.device, model, valid_loader, v_len)
-            writer.add_scalar('AUC', AUC_v, epoch_log)
-            early_stopping(AUC_v, model)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break 
+            # writer.add_scalar('AUC', AUC_v, epoch_log)
+            if args.early_stop:
+                early_stopping(AUC_v, model)
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break 
           
 
 if __name__ == '__main__':

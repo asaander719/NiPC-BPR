@@ -41,7 +41,7 @@ class SelfAttention(nn.Module):
         output = torch.mean(weighted_values, dim=1) #(bs, out_dim) #average pooling
         return output
 
-class APCL(Module):
+class APCL(nn.Module):
     def __init__(self, args, embedding_weight, visual_features, text_features):        
         super(APCL, self) .__init__()
         self.args = args
@@ -57,50 +57,50 @@ class APCL(Module):
         self.use_weighted_loss = args.use_weighted_loss
         self.temperature = args.temperature
         #for compatibility space
-        self.visual_nn = Sequential(
-            Linear(args.visual_feature_dim, self.hidden_dim),
+        self.visual_nn = nn.Sequential(
+            nn.Linear(args.visual_feature_dim, self.hidden_dim),
             nn.Sigmoid())
         self.visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         #for personalization space
-        self.p_visual_nn = Sequential(
-            Linear(args.visual_feature_dim, self.hidden_dim),
+        self.p_visual_nn = nn.Sequential(
+            nn.Linear(args.visual_feature_dim, self.hidden_dim),
             nn.Sigmoid())
         self.p_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.p_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         #for att space
-        self.att_visual_nn = Sequential(
-            Linear(args.visual_feature_dim, self.hidden_dim),
+        self.att_visual_nn = nn.Sequential(
+            nn.Linear(args.visual_feature_dim, self.hidden_dim),
             nn.Sigmoid())
         self.att_visual_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
         self.att_visual_nn[0].apply(lambda module: uniform_(module.bias.data,0,0.001))
 
         if self.args.dataset == 'IQON3000':
-            self.text_nn = Sequential(
-                Linear(100 * args.textcnn_layer, self.hidden_dim),
+            self.text_nn = nn.Sequential(
+                nn.Linear(100 * args.textcnn_layer, self.hidden_dim),
                 nn.Sigmoid()) 
 
-            self.p_text_nn = Sequential(
-                Linear(100 * args.textcnn_layer, self.hidden_dim),
+            self.p_text_nn = nn.Sequential(
+                nn.Linear(100 * args.textcnn_layer, self.hidden_dim),
                 nn.Sigmoid())
 
-            self.att_text_nn = Sequential(
-                Linear(100 * args.textcnn_layer, self.hidden_dim),
+            self.att_text_nn = nn.Sequential(
+                nn.Linear(100 * args.textcnn_layer, self.hidden_dim),
                 nn.Sigmoid())
 
-        elif self.args.dataset == 'Polyvore':
-            self.text_nn = Sequential(
-                Linear(args.text_feature_dim, self.hidden_dim),
+        elif self.args.dataset == 'Polyvore_519':
+            self.text_nn = nn.Sequential(
+                nn.Linear(args.text_feature_dim, self.hidden_dim),
                 nn.Sigmoid()) 
 
-            self.p_text_nn = Sequential(
-                Linear(args.text_feature_dim, self.hidden_dim),
+            self.p_text_nn = nn.Sequential(
+                nn.Linear(args.text_feature_dim, self.hidden_dim),
                 nn.Sigmoid())
 
-            self.att_text_nn = Sequential(
-                Linear(args.text_feature_dim, self.hidden_dim),
+            self.att_text_nn = nn.Sequential(
+                nn.Linear(args.text_feature_dim, self.hidden_dim),
                 nn.Sigmoid())
 
         self.text_nn[0].apply(lambda module: uniform_(module.weight.data,0,0.001))
@@ -117,7 +117,7 @@ class APCL(Module):
             self.text_features = text_features.to(args.device)
             if self.args.dataset == 'IQON3000':
                 # self.max_sentense_length = args.max_sentence
-                self.text_embedding = Embedding.from_pretrained(embedding_weight, freeze=False) #tensor([[23521, 38583, 21480,  ..., 54275, 54275, 54275],...])
+                self.text_embedding = nn.Embedding.from_pretrained(embedding_weight, freeze=False) #tensor([[23521, 38583, 21480,  ..., 54275, 54275, 54275],...])
                 self.textcnn = TextCNN(args.textcnn_layer, sentence_size=(args.max_sentence, args.text_feature_dim), output_size=self.hidden_dim)
                 self.T_attention = SelfAttention(input_dim= 100 * args.textcnn_layer, output_dim = 100 * args.textcnn_layer)
             else:
@@ -201,7 +201,7 @@ class APCL(Module):
                 J_text_latent_p = self.p_text_nn(J_text_fea)
                 K_text_latent_p = self.p_text_nn(K_text_fea)
 
-            elif self.args.dataset == 'Polyvore':
+            elif self.args.dataset == 'Polyvore_519':
                 text_I = self.text_features[Is] #256,83,300
                 text_J = self.text_features[Js]
                 text_K = self.text_features[Ks]
@@ -256,7 +256,7 @@ class APCL(Module):
                         Text_UuJ = torch.sum(all_u_pb_text * text_J_u, dim=-1)
                         Text_UuK = torch.sum(all_u_pb_text * text_K_u, dim=-1)
 
-                elif self.args.dataset == 'Polyvore':
+                elif self.args.dataset == 'Polyvore_519':
                     text_all_u_pb = self.text_features[all_u_pb]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
                     t_sim_bs_out = self.T_attention.forward(text_all_u_pb) #(bs, 512)
                     all_u_pb_text = self.att_text_nn(t_sim_bs_out) #bs,512
@@ -415,8 +415,7 @@ class APCL(Module):
         ub_inter_weight = batch[5]
         tb_inter_weight = batch[6]
         bs = len(Us)
-       
-        # print(self.visual_features.device)
+
         if self.with_visual:
             vis_I = self.visual_features[Is] #bs,visual_feature_dim = 2048 = torch.Size([256, 2048])
             vis_J = self.visual_features[Js]
@@ -442,14 +441,6 @@ class APCL(Module):
                 K_visual_latent_p = F.normalize(K_visual_latent_p,dim=0)
                 I_visual_latent_p = F.normalize(I_visual_latent_p,dim=0)
 
-            # Js_list_v = J_visual_latent.unsqueeze(1) #256,1,512
-            # Ks_list_v = K_visual_latent.unsqueeze(0).expand(bs, -1, -1) #1,256,512->256,256,512
-            # J_visual_latent = torch.cat([Js_list_v, Ks_list_v], dim=1) #256,257,512 # dim=1 里面第一个为postive target(1+256)
-            # # Js_list_v_p = J_visual_latent_p.unsqueeze(1) #256,1,512
-            # # Ks_list_v_p = K_visual_latent_p.unsqueeze(0).expand(bs, -1, -1) #1,256,512->256,256,512
-            # # J_visual_latent_p = torch.cat([Js_list_v_p, Ks_list_v_p], dim=1) 
-            # I_visual_latent = I_visual_latent.unsqueeze(1).expand(-1, candi_num, -1) # 256,257,512
-            # # I_visual_latent_p = I_visual_latent_p.unsqueeze(1).expand(-1, candi_num, -1) # 256,257,512
             I_visual_latent, Jks_visual_latent = self.wide_infer(bs, candi_num, J_visual_latent, K_visual_latent, I_visual_latent)
             if self.cos:
                 visual_ijs_score = F.cosine_similarity(I_visual_latent, Jks_visual_latent, dim=-1)    #256,257    
@@ -497,7 +488,7 @@ class APCL(Module):
                 K_text_latent_p = self.p_text_nn(K_text_fea)
                 I_text_latent_p = self.p_text_nn(I_text_fea)
 
-            elif self.args.dataset == 'Polyvore':
+            elif self.args.dataset == 'Polyvore_519':
                 text_I = self.text_features[Is] #256,83,300
                 text_J = self.text_features[Js]
                 if self.args.wide_evaluate:
@@ -546,7 +537,7 @@ class APCL(Module):
                     text_J_u = self.att_text_nn(J_text_fea)
                     text_K_u = self.att_text_nn(K_text_fea)
 
-                elif self.args.dataset == 'Polyvore':
+                elif self.args.dataset == 'Polyvore_519':
                     text_all_u_pb = self.text_features[all_u_pb]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
                     t_sim_bs_out = self.T_attention.forward(text_all_u_pb) #(bs, 512)
                     all_u_pb_text = self.att_text_nn(t_sim_bs_out) #bs,512
