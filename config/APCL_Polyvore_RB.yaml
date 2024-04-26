@@ -18,13 +18,13 @@ TRAIN:
   start_epoch: 0
   print_freq: 1
   workers: 2
-  batch_size: 1024
+  batch_size: 256 #1024
   hidden_dim: 512
   text_feature_dim: 2400
   visual_feature_dim: 2048
   with_visual: True
   with_text: True
-  train_gpu: 1
+  train_gpu: 0
   base_lr: 0.001 # learning rate
   wd: 0.0001 # weight decay
   power: 0.9
@@ -41,7 +41,7 @@ TRAIN:
   save_path: saved/Polyvore_519/APCL
   weight:  # path to initial weight (default: none)
   resume:  # 
-  evaluate: True
+  evaluate: True #validation
   batch_size_val: 64
   num_his: 2
   num_interact: 2
@@ -56,6 +56,8 @@ TRAIN:
   use_weighted_loss: False # using weighted infoNCE loss
   temperature: 0.1 
   w_infoNCE: 0.05 #weight of infoNCE LOSS
+  mode: RB #given top, recommend bottom "rt: given bottom, recommend top"
+  wide_evaluate: True
 
 Distributed:
   dist_url: tcp://158.132.123.124:6080
@@ -66,10 +68,14 @@ Distributed:
 
 TEST:
   # test_sub_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
-  test_batch_size: 1024
+  test_batch_size: 128 #256
   test_gpu: 1
   has_prediction: False # has prediction already or not
   model_path: saved/Polyvore_519/APCL/train_epoch_11.pth    # evaluation model path
   save_folder: saved/Polyvore_519/APCL/result  #test results save folder
   test_distributed: False
   f_tset : True
+  metrics: [recall, ndcg, mrr]
+  k: [5, 10, 20]
+  batch_size: 512
+  metric_topk: 20

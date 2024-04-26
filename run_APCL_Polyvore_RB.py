@@ -15,7 +15,7 @@ import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 from util import config
 from tool.util import * #AverageMeter, poly_learning_rate, find_free_port, EarlyStopping
-from trainer.loader_APCL import Load_Data
+from trainer.loader_APCL import Load_Data, Test_Data
 import csv
 from torch.optim import Adam
 from sys import argv
@@ -27,10 +27,11 @@ from collections import defaultdict
 from tqdm import tqdm
 import pandas as pd
 from torch.utils.data import DataLoader, Dataset
+from tool.metrics import *
 
 def get_parser(): 
     parser = argparse.ArgumentParser(description='APCL')
-    parser.add_argument('--config', type=str, default='config/APCL_Polyvore_RB.yaml', help='config file')
+    parser.add_argument('--config', type=str, default='config/APCL_Polyvore_RB.yaml', help='config file') #APCL_IQON3000_RB.yaml #APCL_Polyvore_RB.yaml
     parser.add_argument('opts', help='see config/APCL_Polyvore_RB.yaml for all options', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
@@ -90,23 +91,65 @@ def training(device, w_infoNCE, model, train_data_loader, optimizer, epoch):
     return loss_scalar/iteration, pos
 
 
-def validate(device, model, val_loader, t_len):
-    logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
+def validate(device, model, val_loader, t_len): #for wide infer
+    logger.info('>>>>>>>>>>>>>>>> Start Wide Evaluation >>>>>>>>>>>>>>>>')
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    model.eval()
+    end = time.time()
+    pos = 0
+    preds = []
+    for iteration, aBatch in enumerate(val_loader):
+        aBatch = [x.to(device) for x in aBatch]
+        scores = model.inference(aBatch, train=False)          
+        # pos += float(torch.sum(output.ge(0)))
+        _, tops = torch.topk(scores, k=args.metric_topk, dim=-1)
+        preds.append(tops)
+
+    preds = torch.cat(preds, dim=0)
+    bs = preds.size(0)
+    grd = [0] * bs
+    grd_cnt = [1] * bs
+    metrics = {}
+    for topk in [10]: #args.k:
+        metrics[topk] = {}
+        REC, MRR, NDCG = get_metrics(grd, grd_cnt, preds.cpu().numpy(), topk)
+        metrics[topk]['recall'] = REC
+        metrics[topk]['mrr'] = MRR
+        metrics[topk]['ndcg'] = NDCG
+    # AUC = pos/t_len
+    batch_time.update(time.time() - end)
+    end = time.time()
+    # logger.info('Test: [{}/{}] '
+    #             'metrics: {accuracy:.4f}.'.format(iteration + 1, len(val_loader),
+    #                                                 accuracy=metrics))
+    logger.info('HR@10: {HIT:.4f}.'.format(HIT=metrics[10]['recall']))
+    logger.info('NDCG@10: {ndcg:.4f}.'.format(ndcg=metrics[10]['ndcg']))
+    logger.info('MRR@10: {mrr:.4f}.'.format(mrr=metrics[10]['mrr']))
+    return metrics, preds
+
+def validate_AUC(device, model, val_loader, t_len): #For AUC infer
+    logger.info('>>>>>>>>>>>>>>>> Start AUC Evaluation >>>>>>>>>>>>>>>>')
     batch_time = AverageMeter()
     data_time = AverageMeter()
     model.eval()
     end = time.time()
     pos = 0
     for i, aBatch in enumerate(val_loader):
+        data_time.update(time.time() - end)
         aBatch = [x.to(device) for x in aBatch]
-        output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=False)          
+        output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=False)             
         pos += float(torch.sum(output.ge(0)))
     AUC = pos/t_len
+    # return pos/len(testloader)
     batch_time.update(time.time() - end)
     end = time.time()
+    # if ((i + 1) % args.print_freq == 0) and main_process():
     logger.info('Test: [{}/{}] '
-                'Accuracy {accuracy:.4f}.'.format(i + 1, len(val_loader),
-                                                    accuracy=AUC))
+                'Accuracy {accuracy:.4f} '
+                'AUC_NUM: {AUC_NUM: }'.format(i + 1, len(val_loader),
+                                                    accuracy=AUC,
+                                                    AUC_NUM=pos))
     return AUC, pos
 
 def Get_Data(train_data_file):
@@ -164,6 +207,7 @@ def main():
             embedding_weight = None
     else:
         text_features_tensor = None
+        embedding_weight = None
 
     user_map = json.load(open(args.user_map))
     item_map = json.load(open(args.item_map)) 
@@ -177,8 +221,8 @@ def main():
         from Models.BPRs.NiPCBPR import NiPCBPR
         model = NiPCBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
     elif args.arch == 'model':
-        from Models.BPRs.model import model
-        model = model(args, embedding_weight, visual_features_tensor, text_features_tensor)
+        from Models.BPRs.GPBPR import GPBPR
+        model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
     elif args.arch == 'BPR':
         from Models.BPRs.BPR import BPR
         model = BPR(args.user_num, args.item_num)
@@ -226,14 +270,14 @@ def main():
 
     test_data_ori = load_csv_data(args.test_data)
     test_data_ori  = torch.LongTensor(test_data_ori)
-    test_data = Load_Data(args, test_data_ori, user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
+    test_data = Test_Data(args, test_data_ori, user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
         bottom_user_dict, popular_users, ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight)
     test_loader = DataLoader(test_data, batch_size=args.test_batch_size, shuffle=False)
     t_len = len(test_data_ori)
 
     valid_data_ori = load_csv_data(args.valid_data)
     valid_data_ori  = torch.LongTensor(valid_data_ori)
-    valid_data = Load_Data(args, valid_data_ori, user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
+    valid_data = Test_Data(args, valid_data_ori, user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
         bottom_user_dict, popular_users, ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight)
     valid_loader = DataLoader(valid_data, batch_size=args.test_batch_size, shuffle=False)
     v_len = len(valid_data_ori)
@@ -261,15 +305,17 @@ def main():
             if epoch_log / args.save_freq > 2:
                 deletename = args.save_path + '/train_epoch_' + str(epoch_log - args.save_freq * 2) + '.pth'
                 os.remove(deletename)
+
+        metrics, preds = validate(args.device, model, test_loader, t_len)
         if args.evaluate:
-            AUC_v, pos_v = validate(args.device, model, valid_loader, v_len)
-        AUC, pos = validate(args.device, model, test_loader, t_len)
-        writer.add_scalar('AUC', AUC, epoch_log)
-            
-        early_stopping(AUC_v, model)
-        if early_stopping.early_stop:
-            print("Early stopping")
-            break 
+            args.wide_evaluate = False
+            AUC_v, pos_v = validate_AUC(args.device, model, valid_loader, v_len)
+            writer.add_scalar('AUC', AUC_v, epoch_log)
+            early_stopping(AUC_v, model)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break 
+          
 
 if __name__ == '__main__':
     main()

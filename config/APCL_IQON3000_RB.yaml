@@ -22,7 +22,7 @@ TRAIN:
   max_sentence: 83
   print_freq: 1
   workers: 2
-  batch_size: 1024
+  batch_size: 256 #1024
   hidden_dim: 512
   text_feature_dim: 300
   visual_feature_dim: 2048
@@ -60,6 +60,9 @@ TRAIN:
   use_weighted_loss: False # using weighted infoNCE loss
   temperature: 0.1 
   w_infoNCE: 0.05 #weight of infoNCE LOSS
+  mode: RB #given top, recommend bottom "rt: given bottom, recommend top"
+  wide_evaluate: True
+
 
 Distributed:
   dist_url: tcp://127.0.0.1:6789
@@ -69,9 +72,14 @@ Distributed:
   rank: 0
 
 TEST:
-  test_batch_size: 1024
+  test_batch_size: 128 #1024
   test_gpu: 0
   has_prediction: False # has prediction already or not
   model_path: saved/IQON3000/APCL/   # evaluation model path
   save_folder: saved/IQON3000/APCL/result/   #test results save folder
   test_distributed: False
+  f_tset : True
+  metrics: [recall, ndcg, mrr]
+  k: [5, 10, 20]
+  batch_size: 512
+  metric_topk: 20

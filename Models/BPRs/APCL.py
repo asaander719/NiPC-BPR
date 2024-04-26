@@ -136,6 +136,7 @@ class APCL(Module):
         ub_inter_weight = batch[5]
         tb_inter_weight = batch[6]
         bs = len(Us)
+        infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = 0,0,0,0
         # print(self.visual_features.device)
         if self.with_visual:
             vis_I = self.visual_features[Is] #bs,visual_feature_dim = 2048 = torch.Size([256, 2048])
@@ -395,5 +396,261 @@ class APCL(Module):
                 # U_BuK = self.w1 * Text_UuK
 
                 pred = pred + U_BuJ - U_BuK
+
+        if not self.with_visual and not self.with_text: # without visual & text -> no compatibility modeling
+            cuj = self.vtbpr(Us, Js, None, None) #torch.Size(bs)
+            cuk = self.vtbpr(Us, Ks, None, None)
+            pred = cuj - cuk
                 
         return pred, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps
+    
+    def inference(self, batch, train=False, **args):
+        Us = batch[0] #bs
+        Is = batch[1]
+        Js = batch[2]
+        Ks_list = batch[3] #torch.Size([256, 1])
+        # J_list = torch.cat([Js.unsqueeze(1), Ks_list], dim=-1)  #torch.Size([256, 2])
+        candi_num = 1 + Ks_list.size(0)  # one positive + all negative #257
+        all_u_pb = batch[4]
+        ub_inter_weight = batch[5]
+        tb_inter_weight = batch[6]
+        bs = len(Us)
+       
+        # print(self.visual_features.device)
+        if self.with_visual:
+            vis_I = self.visual_features[Is] #bs,visual_feature_dim = 2048 = torch.Size([256, 2048])
+            vis_J = self.visual_features[Js]
+            if self.args.wide_evaluate:
+                vis_K = self.visual_features[Ks_list.squeeze(1)] 
+            else:
+                vis_K = self.visual_features[Ks_list] 
+  
+            I_visual_latent = self.visual_nn(vis_I) #bs, hidden_dim =torch.Size([256, 512])
+            J_visual_latent = self.visual_nn(vis_J)
+            K_visual_latent = self.visual_nn(vis_K)
+
+            J_visual_latent_p = self.p_visual_nn(vis_J)
+            K_visual_latent_p = self.p_visual_nn(vis_K)
+            I_visual_latent_p = self.p_visual_nn(vis_I)
+
+            if self.with_Nor:
+                I_visual_latent = F.normalize(I_visual_latent,dim=0)
+                J_visual_latent = F.normalize(J_visual_latent,dim=0)
+                K_visual_latent = F.normalize(K_visual_latent,dim=0)   
+
+                J_visual_latent_p = F.normalize(J_visual_latent_p,dim=0)
+                K_visual_latent_p = F.normalize(K_visual_latent_p,dim=0)
+                I_visual_latent_p = F.normalize(I_visual_latent_p,dim=0)
+
+            # Js_list_v = J_visual_latent.unsqueeze(1) #256,1,512
+            # Ks_list_v = K_visual_latent.unsqueeze(0).expand(bs, -1, -1) #1,256,512->256,256,512
+            # J_visual_latent = torch.cat([Js_list_v, Ks_list_v], dim=1) #256,257,512 # dim=1 里面第一个为postive target(1+256)
+            # # Js_list_v_p = J_visual_latent_p.unsqueeze(1) #256,1,512
+            # # Ks_list_v_p = K_visual_latent_p.unsqueeze(0).expand(bs, -1, -1) #1,256,512->256,256,512
+            # # J_visual_latent_p = torch.cat([Js_list_v_p, Ks_list_v_p], dim=1) 
+            # I_visual_latent = I_visual_latent.unsqueeze(1).expand(-1, candi_num, -1) # 256,257,512
+            # # I_visual_latent_p = I_visual_latent_p.unsqueeze(1).expand(-1, candi_num, -1) # 256,257,512
+            I_visual_latent, Jks_visual_latent = self.wide_infer(bs, candi_num, J_visual_latent, K_visual_latent, I_visual_latent)
+            if self.cos:
+                visual_ijs_score = F.cosine_similarity(I_visual_latent, Jks_visual_latent, dim=-1)    #256,257    
+            else:
+                visual_ijs_score = torch.sum(I_visual_latent * Jks_visual_latent, dim=-1)
+
+            if self.att:
+                vis_all_u_pb = self.visual_features[all_u_pb]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
+                v_sim_bs_out = self.V_attention.forward(vis_all_u_pb) #(bs, 512)
+                all_u_pb_visual = self.att_visual_nn(v_sim_bs_out) #bs,512
+                vis_J_u = self.att_visual_nn(vis_J)
+                vis_K_u = self.att_visual_nn(vis_K)
+
+                if self.with_Nor:
+                    all_u_pb_visual = F.normalize(all_u_pb_visual,dim=0)
+                    vis_J_u = F.normalize(vis_J_u,dim=0)
+                    vis_K_u = F.normalize(vis_K_u,dim=0)
+                vis_J_u = vis_J_u.unsqueeze(1)
+                vis_K_u = vis_K_u.unsqueeze(0).expand(bs, -1, -1)
+                vis_Jks_u = torch.cat([vis_J_u, vis_K_u], dim=1)
+                all_u_pb_visual = all_u_pb_visual.unsqueeze(1).expand(-1, candi_num, -1)
+                if self.cos:
+                    Visual_Uu_score = F.cosine_similarity(all_u_pb_visual, vis_Jks_u, dim=-1)
+                else:
+                    Visual_Uu_score = torch.sum(all_u_pb_visual * vis_Jks_u, dim=-1)
+                 
+      
+        if self.with_text:
+            if self.args.dataset == 'IQON3000':
+                text_I = self.text_embedding(self.text_features[Is].long()) #256,83,300 text_I = self.text_embedding(self.text_features[Is]) 
+                text_J = self.text_embedding(self.text_features[Js].long())
+                if self.args.wide_evaluate:
+                    text_K = self.text_embedding(self.text_features[Ks_list.squeeze(1)].long())
+                else:
+                    text_K = self.text_embedding(self.text_features[Ks_list].long())
+                I_text_fea = self.textcnn(text_I.unsqueeze(1))  #256,400
+                J_text_fea = self.textcnn(text_J.unsqueeze(1))
+                K_text_fea = self.textcnn(text_K.unsqueeze(1))
+
+                I_text_latent = self.text_nn(I_text_fea) #256,512
+                J_text_latent = self.text_nn(J_text_fea)
+                K_text_latent = self.text_nn(K_text_fea)
+
+                J_text_latent_p = self.p_text_nn(J_text_fea)
+                K_text_latent_p = self.p_text_nn(K_text_fea)
+                I_text_latent_p = self.p_text_nn(I_text_fea)
+
+            elif self.args.dataset == 'Polyvore':
+                text_I = self.text_features[Is] #256,83,300
+                text_J = self.text_features[Js]
+                if self.args.wide_evaluate:
+                    text_K = self.text_features[Ks_list.squeeze(1)]
+                else:
+                    text_K = self.text_features[Ks_list]
+
+                I_text_latent = self.text_nn(text_I) #256,512
+                J_text_latent = self.text_nn(text_J)
+                K_text_latent = self.text_nn(text_K)
+
+                J_text_latent_p = self.p_text_nn(text_J)
+                K_text_latent_p = self.p_text_nn(text_K)
+                I_text_latent_p = self.p_text_nn(text_I)
+
+
+            if self.with_Nor:
+                I_text_latent = F.normalize(I_text_latent,dim=0)
+                J_text_latent = F.normalize(J_text_latent,dim=0)
+                K_text_latent = F.normalize(K_text_latent,dim=0)
+
+                J_text_latent_p = F.normalize(J_text_latent_p,dim=0)
+                K_text_latent_p = F.normalize(K_text_latent_p,dim=0)
+                I_text_latent_p = F.normalize(I_text_latent_p,dim=0)
+
+            I_text_latent, Jks_text_latent = self.wide_infer(bs, candi_num, J_text_latent, K_text_latent, I_text_latent)
+            # I_text_latent_p, JKs_text_latent_p = self.wide_infer(bs, candi_num, J_text_latent_p, K_text_latent_p, I_text_latent_p)
+      
+            if self.cos:
+                text_ijks = F.cosine_similarity(I_text_latent, Jks_text_latent, dim=-1)
+            else:
+                text_ijks = torch.sum(I_text_latent * Jks_text_latent, dim=-1)
+
+            # sim att
+            if self.att:
+                if self.args.dataset == 'IQON3000':
+                    text_all_u_pb = self.text_embedding(self.text_features[all_u_pb].long()) #'[64, 2, 83] ->[64, 2, 83, 300]
+                    bs,seq,h,w = text_all_u_pb.size() #64 2 83 300
+                    text_all_u_pb_view = text_all_u_pb.view(bs*seq,h,w) #bs*seq, h,w [128, 83, 300]
+                    
+                    all_u_pb_text_fea = self.textcnn(text_all_u_pb_view.unsqueeze(1))  #bs*seq, 1, h,w -> bs*seq, 400
+                    all_u_pb_text_fea_split = all_u_pb_text_fea.view(bs, seq, all_u_pb_text_fea.shape[-1]) #bs, seq, 400
+
+                    t_sim_bs_out = self.T_attention.forward(all_u_pb_text_fea_split) #bs, seq, 400 -> (bs, 400)
+                    all_u_pb_text = self.att_text_nn(t_sim_bs_out) #bs,512
+                    text_J_u = self.att_text_nn(J_text_fea)
+                    text_K_u = self.att_text_nn(K_text_fea)
+
+                elif self.args.dataset == 'Polyvore':
+                    text_all_u_pb = self.text_features[all_u_pb]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
+                    t_sim_bs_out = self.T_attention.forward(text_all_u_pb) #(bs, 512)
+                    all_u_pb_text = self.att_text_nn(t_sim_bs_out) #bs,512
+                    text_J_u = self.att_text_nn(text_J)
+                    text_K_u = self.att_text_nn(text_K)
+
+                if self.with_Nor:
+                        all_u_pb_text = F.normalize(all_u_pb_text,dim=0)
+                        text_J_u = F.normalize(text_J_u,dim=0)
+                        text_K_u = F.normalize(text_K_u,dim=0)
+
+                all_u_pb_text, text_JK_u = self.wide_infer(bs, candi_num, text_J_u, text_K_u, all_u_pb_text)
+
+                if self.cos:
+                    Text_Uu_score = F.cosine_similarity(all_u_pb_text, text_JK_u, dim=-1)
+                else:
+                    Text_Uu_score = torch.sum(all_u_pb_text * text_JK_u, dim=-1)
+                
+
+        if self.with_visual and self.with_text:
+            if self.args.b_PC:  
+                if self.args.wide_evaluate: 
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list.squeeze(1), J_visual_latent_p, J_text_latent_p, K_visual_latent_p, K_text_latent_p) 
+                else:
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list, J_visual_latent_p, J_text_latent_p, K_visual_latent_p, K_text_latent_p)      
+            else:
+                if self.args.wide_evaluate:
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list.squeeze(1), J_visual_latent, J_text_latent, K_visual_latent, K_text_latent) 
+                else:
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list, J_visual_latent, J_text_latent, K_visual_latent, K_text_latent) 
+
+            score_p = visual_ijs_score + text_ijks  
+
+            if self.use_weighted_loss:
+                score = ub_inter_weight * score_p  + tb_inter_weight * score_c
+            else:
+                score = self.weight_P * score_p  + (1 - self.weight_P) * score_c
+
+            if self.att:
+                score_att = self.args.uu_w * (self.args.uu_v_w * Visual_Uu_score + (1-self.args.uu_v_w) * Text_Uu_score)     
+                # score_att = self.w1 * (self.args.uu_v_w * Visual_Uu_score + (1-self.args.uu_v_w) * Text_Uu_score)
+                score += score_att
+
+
+        if self.with_visual and not self.with_text: # without text
+            if self.args.b_PC:   
+                if self.args.wide_evaluate: 
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list.squeeze(1), J_visual_latent_p, None, K_visual_latent_p, None)
+                else:
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list, J_visual_latent_p, None, K_visual_latent_p, None)     
+            else:
+                if self.args.wide_evaluate: 
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list.squeeze(1), J_visual_latent, None, K_visual_latent, None) 
+                else:
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list, J_visual_latent, None, K_visual_latent, None) 
+
+            score_p = visual_ijs_score   
+             
+            if self.use_weighted_loss:
+                score = ub_inter_weight * score_p  + tb_inter_weight * score_c
+            else:
+                score = self.weight_P * score_p  + (1 - self.weight_P) * score_c
+
+            if self.att:
+                score_att = self.args.uu_w *  Visual_Uu_score    
+                # score_att = self.w1 *  * Visual_Uu_score 
+                score += score_att
+        
+        if not self.with_visual and self.with_text: # without visual
+            if self.args.b_PC:   
+                if self.args.wide_evaluate: 
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list.squeeze(1), None, J_text_latent_p, None, K_text_latent_p) 
+                else:
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list, None, J_text_latent_p, None, K_text_latent_p)    
+            else:
+                if self.args.wide_evaluate: 
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list.squeeze(1), None, J_text_latent, None, K_text_latent) 
+                else:
+                    score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list, None, J_text_latent, None, K_text_latent)
+
+            score_p = text_ijks  
+             
+            if self.use_weighted_loss:
+                score = ub_inter_weight * score_p  + tb_inter_weight * score_c
+            else:
+                score = self.weight_P * score_p  + (1 - self.weight_P) * score_c
+
+            if self.att:
+                score_att = self.args.uu_w * Text_Uu_score    
+                # score_att = self.w1 * Text_Uu_score
+                score += score_att
+
+        if not self.with_visual and not self.with_text: # without visual & text
+            if self.args.wide_evaluate:   
+                score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list.squeeze(1), None, None, None, None)   
+            else:
+                score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list, None, None, None, None)         
+             
+            score = score_c # NO comaptibility modeling
+        return score
+    
+    def wide_infer(self, bs, candi_num, J, K, I):
+        J = J.unsqueeze(1) #256,1,512
+        K = K.unsqueeze(0).expand(bs, -1, -1) #1,256,512->256,256,512
+        Jks = torch.cat([J, K], dim=1) #256,257,512 # dim=1 里面第一个为postive target(1+256)
+        I= I.unsqueeze(1).expand(-1, candi_num, -1) # 256,257,512
+        return I, Jks
