@@ -231,15 +231,35 @@ def main():
     elif args.arch == 'GPBPR':
         from Models.BPRs.GPBPR import GPBPR
         model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+        args.with_Nor = False
     elif args.arch == 'BPR':
-        from Models.BPRs.BPR import BPR
-        model = BPR(args.user_num, args.item_num)
+        from Models.BPRs.GPBPR import GPBPR
+        model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+        args.with_Nor = False
+        args.with_visual = False
+        args.with_text = False
+        args.weight_P = 0
     elif args.arch == 'VTBPR':
-        from Models.BPRs.VTBPR import VTBPR
-        model = VTBPR(args.user_num, args.item_num) 
+        from Models.BPRs.GPBPR import GPBPR
+        model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+        args.with_Nor = False
+        args.weight_P = 0
+    elif args.arch == 'TBPR':
+        from Models.BPRs.GPBPR import GPBPR
+        model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+        args.with_Nor = False
+        args.with_visual = False
+        args.weight_P = 0
+    elif args.arch == 'VBPR':
+        from Models.BPRs.GPBPR import GPBPR
+        model = GPBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+        args.with_Nor = False
+        args.with_text = False
+        args.weight_P = 0
     elif args.arch == 'CRBPR':
         from Models.BPRs.CRBPR import CRBPR
         model = CRBPR(args, embedding_weight, visual_features_tensor, text_features_tensor) 
+        from trainer.loader_iqon import Load_Data
     
     model.to(args.device)
     
@@ -306,14 +326,14 @@ def main():
 
         # writer.add_scalar('loss_train', loss_train, epoch_log)
 
-        if (epoch_log % args.save_freq == 0):
-            args.save_path = './saved/' + args.dataset 
-            filename = args.save_path + '/'+ args.arch  + '_' + args.mode  + '_' + str(epoch_log) + '.pth'
-            logger.info('Saving checkpoint to: ' + filename)
-            torch.save({'epoch': epoch_log, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}, filename)
-            if epoch_log / args.save_freq > 2:
-                deletename = args.save_path + '/'+ args.arch + '_' + args.mode  + '_' + str(epoch_log - args.save_freq * 2) + '.pth'
-                os.remove(deletename)
+        # if (epoch_log % args.save_freq == 0):
+        #     args.save_path = './saved/' + args.dataset 
+        #     filename = args.save_path + '/'+ args.arch  + '_' + args.mode  + '_' + str(epoch_log) + '.pth'
+        #     logger.info('Saving checkpoint to: ' + filename)
+        #     torch.save({'epoch': epoch_log, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}, filename)
+        #     if epoch_log / args.save_freq > 2:
+        #         deletename = args.save_path + '/'+ args.arch + '_' + args.mode  + '_' + str(epoch_log - args.save_freq * 2) + '.pth'
+        #         os.remove(deletename)
 
         metrics, preds = validate(args.device, model, test_loader, t_len)
         if args.evaluate:
