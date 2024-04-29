@@ -26,6 +26,7 @@ class Load_Data(Dataset):
     def __getitem__(self, idx):
         test_data_ori = self.test_data_ori[idx]
         user_idx, top_idx, pos_bottom_idx, neg_bottom_idx = test_data_ori 
+        neg_js = self.test_data_ori[idx][3:]
 
         bottom_his = self.user_bottom_dict[int(user_idx.numpy())]
 
@@ -167,5 +168,7 @@ class Load_Data(Dataset):
             for i in range(self.args.num_interact):
                 # tb_his.append(-1)
                 tb_his.append(self.popular_bottoms[i])#用popular item代替   
-        
-        return user_idx.long(), top_idx.long(), pos_bottom_idx.long(), neg_bottom_idx.long(), torch.LongTensor(ub_his), torch.LongTensor(ut_his),torch.LongTensor(tb_his)
+        if self.args.wide_evaluate:
+            return user_idx.long(), top_idx.long(), pos_bottom_idx.long(), torch.LongTensor(neg_js), torch.LongTensor(ub_his), torch.LongTensor(ut_his),torch.LongTensor(tb_his)
+        else:
+            return user_idx.long(), top_idx.long(), pos_bottom_idx.long(), neg_bottom_idx.long(), torch.LongTensor(ub_his), torch.LongTensor(ut_his),torch.LongTensor(tb_his)

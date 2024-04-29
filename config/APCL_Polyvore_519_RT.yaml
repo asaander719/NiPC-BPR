@@ -62,6 +62,13 @@ TRAIN:
   mode: 'RB' #given top, recommend bottom "rt: given bottom, recommend top"
   wide_evaluate: True
 
+  UC: True
+  GC: True
+  UC_v_w: 0.5
+  GC_v_w: 0.5
+  UC_w: 3
+  GC_w: 2
+
 Distributed:
   dist_url: tcp://158.132.123.124:6080
   dist_backend: 'nccl'

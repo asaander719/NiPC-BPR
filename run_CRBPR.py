@@ -12,7 +12,8 @@ import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 from util import config
 from tool.util import * #AverageMeter, poly_learning_rate, find_free_port, EarlyStopping
-from trainer.loader_APCL import Load_Data, Test_Data
+# from trainer.loader_APCL import Load_Data, Test_Data
+from trainer.loader_iqon import Load_Data
 import csv
 from torch.optim import Adam
 from sys import argv
@@ -58,7 +59,7 @@ def load_embedding_weight(textural_embedding_matrix, device):
     embedding_weight = torch.tensor(embeding_weight, device=device)
     return embedding_weight
 
-def training(device, w_infoNCE, model, train_data_loader, optimizer, epoch):
+def training(device, model, train_data_loader, optimizer, epoch):
     model.train()
     loss_scalar = 0.
     pos = 0
@@ -69,12 +70,8 @@ def training(device, w_infoNCE, model, train_data_loader, optimizer, epoch):
     for iteration, aBatch in enumerate(train_data_loader):
         aBatch = [x.to(device) for x in aBatch]
         # output = model.fit(aBatch[0], train=True, weight=False) 
-        if args.arch == 'APCL':
-            output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=True)  
-            loss = (-logsigmoid(output)).sum() + w_infoNCE * (infoNCE_v_loss_pc + infoNCE_t_loss_pc + infoNCE_v_loss_ps + infoNCE_t_loss_ps)
-        else:
-            output = model.forward(aBatch, train=True)
-            loss = (-logsigmoid(output)).sum() 
+        output = model.forward(aBatch, train=True)
+        loss = (-logsigmoid(output)).sum() 
         pos += float(torch.sum(output.ge(0)))
         iteration += 1
         optimizer.zero_grad()
@@ -139,10 +136,7 @@ def validate_AUC(device, model, val_loader, t_len): #For AUC infer
     for i, aBatch in enumerate(val_loader):
         data_time.update(time.time() - end)
         aBatch = [x.to(device) for x in aBatch]
-        if args.arch == 'APCL':
-            output, infoNCE_v_loss_pc, infoNCE_t_loss_pc, infoNCE_v_loss_ps, infoNCE_t_loss_ps = model.forward(aBatch, train=False) 
-        else:
-            output = model.forward(aBatch, train=False)             
+        output = model.forward(aBatch, train=False)             
         pos += float(torch.sum(output.ge(0)))
     AUC = pos/t_len
     # return pos/len(testloader)
@@ -164,12 +158,11 @@ def Get_Data(train_data_file):
     top_bottoms_dict = user_history.groupby("top_idx")["pos_bottom_idx"].agg(list).to_dict()
     popular_bottoms = user_history["pos_bottom_idx"].value_counts().to_dict()
     popular_bottoms = list(popular_bottoms.keys())
+
     popular_tops = user_history["top_idx"].value_counts().to_dict()
     popular_tops = list(popular_tops.keys())
-    popular_users = user_history["user_idx"].value_counts().to_dict()
-    popular_users = list(popular_users.keys())
-    bottom_user_dict = user_history.groupby("pos_bottom_idx")["user_idx"].agg(list).to_dict()
-    return user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, bottom_user_dict, popular_users
+
+    return user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops
 
 def interaction_weight(train_data):
     interactions = pd.read_csv(train_data,header=None).astype('int')
@@ -219,9 +212,10 @@ def main():
     args.user_num = len(user_map)
     args.item_num = len(item_map)
     ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight  = interaction_weight(args.train_data)
-    if args.arch == 'APCL':
-        from Models.BPRs.APCL import APCL
-        model = APCL(args, embedding_weight, visual_features_tensor, text_features_tensor)
+    if args.arch == 'CRBPR':
+        from Models.BPRs.CRBPR import CRBPR
+        model = CRBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
+
     elif args.arch == 'NiPCBPR':
         from Models.BPRs.NiPCBPR import NiPCBPR
         model = NiPCBPR(args, embedding_weight, visual_features_tensor, text_features_tensor)
@@ -284,28 +278,25 @@ def main():
         else:          
             logger.info("=> no checkpoint found at '{}'".format(args.resume)) 
 
-    user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, bottom_user_dict, popular_users = Get_Data(args.train_data) 
+    user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops = Get_Data(args.train_data) 
 
     train_data_ori = load_csv_data(args.train_data)
     train_data_ori  = torch.LongTensor(train_data_ori)
-    train_data = Load_Data(args, train_data_ori, user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
-        bottom_user_dict, popular_users, ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight)
+    train_data = Load_Data(args, train_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, drop_last=True)
     train_len = len(train_data_ori)
 
-    test_data_ori = load_csv_data(args.test_data)
-    test_data_ori  = torch.LongTensor(test_data_ori)
-    test_data = Test_Data(args, test_data_ori, user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
-        bottom_user_dict, popular_users, ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight)
-    test_loader = DataLoader(test_data, batch_size=args.test_batch_size, shuffle=False)
-    t_len = len(test_data_ori)
-
     valid_data_ori = load_csv_data(args.valid_data)
     valid_data_ori  = torch.LongTensor(valid_data_ori)
-    valid_data = Test_Data(args, valid_data_ori, user_bottoms_dict, user_tops_dict, top_bottoms_dict, popular_bottoms, popular_tops, 
-        bottom_user_dict, popular_users, ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight)
+    valid_data = Load_Data(args, valid_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
     valid_loader = DataLoader(valid_data, batch_size=args.test_batch_size, shuffle=False)
     v_len = len(valid_data_ori)
+
+    test_data_ori = load_csv_data(args.test_data)
+    test_data_ori  = torch.LongTensor(test_data_ori)
+    test_data = Load_Data(args, test_data_ori, user_bottom_dict, user_top_dict, top_bottoms_dict, popular_bottoms, popular_tops, visual_features_tensor, text_features_tensor)
+    test_loader = DataLoader(test_data, batch_size=args.test_batch_size, shuffle=False)
+    t_len = len(test_data_ori)
 
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
@@ -318,7 +309,7 @@ def main():
     for epoch in range(args.start_epoch, args.epochs):
         model.train()
         epoch_log = epoch + 1
-        loss_train, train_auc_num  = training(args.device, args.w_infoNCE, model, train_loader, optimizer, epoch)
+        loss_train, train_auc_num  = training(args.device, model, train_loader, optimizer, epoch)
         scheduler.step()
 
         # writer.add_scalar('loss_train', loss_train, epoch_log)

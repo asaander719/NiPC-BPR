@@ -1,14 +1,14 @@
 # liao shuiying 2/28/2024
 import torch
-from torch import load, sigmoid, cat, rand, bmm, mean, matmul
+# from torch import load, sigmoid, cat, rand, bmm, mean, matmul
 from torch.nn.functional import logsigmoid
 from torch.nn.init import uniform_
-from torch.nn import *
+# from torch.nn import *
 import torch.nn as nn
-import pandas as pd
-import numpy as np
+# import pandas as pd
+# import numpy as np
 import torch.nn.functional as F
-from util.utils import get_parser
+# from util.utils import get_parser
 from Models.BPRs.BPR import BPR
 from Models.BPRs.VTBPR import VTBPR
 from Models.BPRs.TextCNN import TextCNN
@@ -569,7 +569,7 @@ class APCL(nn.Module):
                 else:
                     score_c = self.vtbpr.infer(bs, candi_num, Us, Js, Ks_list, J_visual_latent, J_text_latent, K_visual_latent, K_text_latent) 
 
-            score_p = visual_ijs_score + text_ijks  
+            score_p = 0.5 * (visual_ijs_score + text_ijks)  
 
             if self.use_weighted_loss:
                 score = ub_inter_weight * score_p  + tb_inter_weight * score_c

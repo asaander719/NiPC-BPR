@@ -130,12 +130,12 @@ class NiPCBPR(Module):
                 visual_ik = torch.sum(I_visual_latent * K_visual_latent, dim=-1)
 
             if self.iPC:    
-                vis_this = self.visual_features[this]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
-                vis_this = self.iPC_visual_nn(vis_this) #bs,3,512
+                vis_tbhis = self.visual_features[tbhis]#bs,3,visual_feature_dim = 2048 torch.Size([256, 3, 2048])
+                vis_tbhis = self.iPC_visual_nn(vis_tbhis) #bs,3,512
                 # print(vis_bhis.size()) torch.Size([64, 3, 512])
                 vis_J_c= self.iPC_visual_nn(vis_J)
                 vis_K_c = self.iPC_visual_nn(vis_K)
-                t_his_visual = torch.mean(vis_this, dim=-2)  #bs, visual_feature_dim = 2048 #torch.Size([256, 512])
+                t_his_visual = torch.mean(vis_tbhis, dim=-2)  #bs, visual_feature_dim = 2048 #torch.Size([256, 512])
 
                 if self.with_Nor:
                     t_his_visual = F.normalize(t_his_visual,dim=0)
@@ -195,31 +195,31 @@ class NiPCBPR(Module):
                 
             if self.iPC:
                 if self.args.dataset == 'IQON3000':
-                    text_this = self.text_embedding(self.text_features[this]) #torch.Size([64, 3, 83, 300])
-                    this_text_fea = self.textcnn(text_this.reshape(bs * self.args.num_his, self.args.max_sentence, self.args.text_feature_dim).unsqueeze(1))  #bs, 400(100*layers)
-                    this_text_fea = self.iPC_text_nn(this_text_fea) #torch.Size([192, 512])
-                    this_text_fea = this_text_fea.reshape(bs, self.args.num_his, self.hidden_dim) #64, 3, 512
-                    this_text_fea_mean = torch.mean(this_text_fea, dim=-2) #torch.Size([bs, 512])
+                    text_tbhis = self.text_embedding(self.text_features[tbhis]) #torch.Size([64, 3, 83, 300])
+                    tbhis_text_fea = self.textcnn(text_tbhis.reshape(bs * self.args.num_his, self.args.max_sentence, self.args.text_feature_dim).unsqueeze(1))  #bs, 400(100*layers)
+                    tbhis_text_fea = self.iPC_text_nn(tbhis_text_fea) #torch.Size([192, 512])
+                    tbhis_text_fea = tbhis_text_fea.reshape(bs, self.args.num_his, self.hidden_dim) #64, 3, 512
+                    tbhis_text_fea_mean = torch.mean(tbhis_text_fea, dim=-2) #torch.Size([bs, 512])
 
                     text_J_c = self.iPC_text_nn(J_text_fea)
                     text_K_c = self.iPC_text_nn(K_text_fea)
                     if self.with_Nor:
-                        this_text_fea_mean = F.normalize(this_text_fea_mean,dim=0)
+                        tbhis_text_fea_mean = F.normalize(tbhis_text_fea_mean,dim=0)
                         text_J_c = F.normalize(text_J_c,dim=0)
                         text_K_c = F.normalize(text_K_c,dim=0)
                     if self.cos:
-                        text_TuJ = F.cosine_similarity(this_text_fea_mean, text_J_c, dim=-1)
-                        text_TuK = F.cosine_similarity(this_text_fea_mean, text_K_c, dim=-1)
+                        text_TuJ = F.cosine_similarity(tbhis_text_fea_mean, text_J_c, dim=-1)
+                        text_TuK = F.cosine_similarity(tbhis_text_fea_mean, text_K_c, dim=-1)
                     else:
-                        text_TuJ = torch.sum(this_text_fea_mean * text_J_c, dim=-1)
-                        text_TuK = torch.sum(this_text_fea_mean * text_K_c, dim=-1)
+                        text_TuJ = torch.sum(tbhis_text_fea_mean * text_J_c, dim=-1)
+                        text_TuK = torch.sum(tbhis_text_fea_mean * text_K_c, dim=-1)
 
                 elif self.args.dataset == 'Polyvore':
-                    text_this = self.text_features[this]
-                    text_this = self.iPC_text_nn(text_this)
+                    text_tbhis = self.text_features[tbhis]
+                    text_tbhis = self.iPC_text_nn(text_tbhis)
                     text_J_c = self.iPC_text_nn(text_J)
                     text_K_c = self.iPC_text_nn(text_K)
-                    t_his_text = torch.mean(text_this, dim=-2)  #bs, visual_feature_dim = 2048 #torch.Size([256, 2048])
+                    t_his_text = torch.mean(text_tbhis, dim=-2)  #bs, visual_feature_dim = 2048 #torch.Size([256, 2048])
                     if self.with_Nor:
                         t_his_text = F.normalize(t_his_text,dim=0)
                         text_J_c = F.normalize(text_J_c,dim=0)

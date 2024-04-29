@@ -67,6 +67,12 @@ TRAIN:
   w_infoNCE: 0.05 #weight of infoNCE LOSS
   mode: 'RB' #given top, recommend bottom "rt: given bottom, recommend top"
   wide_evaluate: True
+  UC: True
+  GC: True
+  UC_v_w: 0.5
+  GC_v_w: 0.5
+  UC_w: 10
+  GC_w:  7
 
 Distributed:
   dist_url: tcp://127.0.0.1:6789
