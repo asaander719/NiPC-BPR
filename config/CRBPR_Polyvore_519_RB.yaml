@@ -1,0 +1,82 @@
+# CRBPR Configuration for Polyvore Dataset - Given top recommend bottom
+DATA:
+  data_root: dataset/Polyvore_519
+  train_data: dataset/Polyvore_519/polyvore_U_519_subset_data/train_sub_data.csv
+  valid_data: dataset/Polyvore_519/polyvore_U_519_subset_data/valid_sub_data.csv
+  test_data: dataset/Polyvore_519/polyvore_U_519_subset_data/test_sub_data.csv
+  uid_dic: dataset/Polyvore_519/polyvore_U_519_data/uid_dic  #user_indix dict
+  user_map: dataset/Polyvore_519/polyvore_U_519_data/user_map  #user id_index map
+  item_map: dataset/Polyvore_519/polyvore_U_519_data/item_map  #item id_index map, including bottom and top
+  img_map: dataset/Polyvore_519/polyvore_U_519_data/img_map    #all image name_id map
+  visual_features_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_visual_fea_tensor_new # top and bottom visual feature tensor
+  textural_features_tensor: dataset/Polyvore_519/polyvore_U_519_data/tb_text_vector
+  textural_embedding_matrix: dataset/IQON3000/feat/smallnwjc2vec
+ 
+TRAIN:
+  arch: CRBPR
+  dataset: Polyvore_519
+  epochs: 80
+  start_epoch: 0
+  print_freq: 1
+  workers: 2
+  batch_size: 128 # Optimized for CRBPR
+  hidden_dim: 512
+  text_feature_dim: 2400
+  visual_feature_dim: 2048
+  with_visual: True
+  with_text: True
+  cuda: 0 #gpu number
+  device: 'cuda'
+  base_lr: 0.001 # learning rate
+  wd: 0.0001 # weight decay
+  power: 0.9
+  index_split: 5
+  num_interaction: 2 # choose 2 bottoms that has been chose by the given top
+  patience: 8 # for early stop
+  early_stop: True
+  with_Nor: True # Feature Scaling
+  b_PC: True # project bottom into personalization and compatibility spaces separately
+  cos: True # using cosine similarity calculate distance
+  weight_P: 0.1
+  his_select_t: True # using textual information to help to select historical bottoms
+  popular_padding: True # using popular items to padding those historical interactions less than default number
+  repeated_interact: False # only contain one interaction for those bottoms chosen by same top/user more than twice for history selection
+  save_path: saved/Polyvore_519/CRBPR
+  weight:  # path to initial weight (default: none)
+  resume:  # 
+  evaluate: True #validation
+  batch_size_val: 64
+  num_his: 3 # number of historical items for user consistency
+  num_interact: 2
+  save_freq: 1
+  textcnn_layer: 4 #not use in polyvore
+  max_sentence: 83 #not use in polyvore
+  mode: 'RB' #given top, recommend bottom "rt: given bottom, recommend top"
+  wide_evaluate: True
+  
+  # CRBPR Specific Parameters
+  UC: True  # User Consistency
+  GC: True  # Global Consistency  
+  UC_v_w: 0.5  # Visual weight in User Consistency
+  GC_v_w: 0.5  # Visual weight in Global Consistency
+  UC_w: 3      # User Consistency weight
+  GC_w: 1      # Global Consistency weight
+
+Distributed:
+  dist_url: tcp://158.132.123.124:6080
+  dist_backend: 'nccl'
+  multiprocessing_distributed: False
+  world_size: 1
+  rank: 0
+
+TEST:
+  test_batch_size: 128
+  test_gpu: [0]
+  has_prediction: False # has prediction already or not
+  model_path: saved/Polyvore_519/CRBPR/train_epoch_best.pth    # evaluation model path
+  save_folder: saved/Polyvore_519/CRBPR/result  #test results save folder
+  test_distributed: False
+  f_tset: True
+  metrics: [recall, ndcg, mrr]
+  k: [5, 10, 20]
+  metric_topk: 20
