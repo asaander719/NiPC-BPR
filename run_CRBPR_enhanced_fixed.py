@@ -5,7 +5,6 @@ import json
 import logging
 import argparse
 import torch
-from torch.nn.functional import logsigmoid
 import torch.nn.functional as F
 import torch.optim
 import torch.utils.data
@@ -26,9 +25,152 @@ import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 from tool.metrics import *
 from config.configurator import parse_configure
-import psutil
-import GPUtil
-from thop import profile, clever_format
+
+# Try to import optional performance monitoring libraries
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    print("Warning: psutil not available, CPU memory monitoring disabled")
+
+try:
+    import GPUtil
+    GPUTIL_AVAILABLE = True
+except ImportError:
+    GPUTIL_AVAILABLE = False
+    print("Warning: GPUtil not available, GPU monitoring may be limited")
+
+try:
+    from thop import profile, clever_format
+    THOP_AVAILABLE = True
+except ImportError:
+    THOP_AVAILABLE = False
+    print("Warning: thop not available, FLOPs calculation disabled")
+
+
+class PerformanceTracker:
+    """Class to handle performance tracking and logging"""
+    
+    def __init__(self, logger):
+        self.logger = logger
+        
+    def count_model_parameters(self, model):
+        """Count total and trainable parameters in the model"""
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        
+        param_details = {}
+        for name, param in model.named_parameters():
+            param_details[name] = {
+                'shape': list(param.shape),
+                'num_params': param.numel(),
+                'requires_grad': param.requires_grad
+            }
+        
+        return {
+            'total_params': total_params,
+            'trainable_params': trainable_params,
+            'param_details': param_details
+        }
+
+    def measure_computational_cost(self, model, sample_batch, device):
+        """Measure FLOPs and memory usage"""
+        model.eval()
+        
+        # Measure FLOPs
+        if THOP_AVAILABLE:
+            try:
+                with torch.no_grad():
+                    flops, params = profile(model, inputs=(sample_batch,), verbose=False)
+                    flops_readable, params_readable = clever_format([flops, params], "%.3f")
+            except Exception as e:
+                self.logger.warning(f"Could not measure FLOPs: {e}")
+                flops_readable, params_readable = "N/A", "N/A"
+        else:
+            flops_readable, params_readable = "N/A", "N/A"
+        
+        # Measure GPU memory usage
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            gpu_memory_used = torch.cuda.memory_allocated(device) / 1024**3  # GB
+            gpu_memory_cached = torch.cuda.memory_reserved(device) / 1024**3  # GB
+        else:
+            gpu_memory_used = 0
+            gpu_memory_cached = 0
+        
+        # Measure CPU memory usage
+        if PSUTIL_AVAILABLE:
+            process = psutil.Process(os.getpid())
+            cpu_memory_used = process.memory_info().rss / 1024**3  # GB
+        else:
+            cpu_memory_used = 0
+        
+        return {
+            'flops': flops_readable,
+            'params_from_profile': params_readable,
+            'gpu_memory_used_gb': gpu_memory_used,
+            'gpu_memory_cached_gb': gpu_memory_cached,
+            'cpu_memory_used_gb': cpu_memory_used
+        }
+
+    def save_performance_report(self, args, param_info, computational_cost, training_metrics, validation_metrics):
+        """Save comprehensive performance report"""
+        report = {
+            'model_info': {
+                'architecture': args.arch,
+                'dataset': args.dataset,
+                'mode': args.mode,
+                'hidden_dim': args.hidden_dim,
+                'batch_size': args.batch_size,
+                'learning_rate': args.base_lr,
+                'weight_decay': args.wd,
+                'epochs': args.epochs
+            },
+            'parameter_info': param_info,
+            'computational_cost': computational_cost,
+            'training_metrics': training_metrics,
+            'validation_metrics': validation_metrics,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # Create reports directory if it doesn't exist
+        os.makedirs('reports', exist_ok=True)
+        
+        # Save detailed report
+        report_filename = f'reports/CRBPR_performance_report_{args.dataset}_{args.mode}_{time.strftime("%Y%m%d_%H%M%S")}.json'
+        with open(report_filename, 'w') as f:
+            json.dump(report, f, indent=2, default=str)
+        
+        self.logger.info(f"Performance report saved to: {report_filename}")
+        
+        # Print summary
+        self.logger.info("="*80)
+        self.logger.info("CRBPR MODEL PERFORMANCE SUMMARY")
+        self.logger.info("="*80)
+        self.logger.info(f"Model: {args.arch}")
+        self.logger.info(f"Dataset: {args.dataset}")
+        self.logger.info(f"Mode: {args.mode}")
+        self.logger.info("-"*50)
+        self.logger.info("PARAMETER STATISTICS:")
+        self.logger.info(f"  Total Parameters: {param_info['total_params']:,}")
+        self.logger.info(f"  Trainable Parameters: {param_info['trainable_params']:,}")
+        self.logger.info(f"  Parameter Size: {param_info['trainable_params'] * 4 / 1024**2:.2f} MB (float32)")
+        self.logger.info("-"*50)
+        self.logger.info("COMPUTATIONAL COST:")
+        self.logger.info(f"  FLOPs: {computational_cost['flops']}")
+        self.logger.info(f"  GPU Memory Used: {computational_cost['gpu_memory_used_gb']:.3f} GB")
+        self.logger.info(f"  CPU Memory Used: {computational_cost['cpu_memory_used_gb']:.3f} GB")
+        self.logger.info("-"*50)
+        self.logger.info("TIMING METRICS:")
+        if training_metrics:
+            self.logger.info(f"  Avg Training Time per Epoch: {np.mean([m['epoch_time'] for m in training_metrics]):.3f}s")
+            self.logger.info(f"  Avg Forward Pass Time: {np.mean([m['avg_forward_time'] for m in training_metrics]):.4f}s")
+            self.logger.info(f"  Avg Backward Pass Time: {np.mean([m['avg_backward_time'] for m in training_metrics]):.4f}s")
+        if validation_metrics:
+            self.logger.info(f"  Avg Validation Time: {np.mean([m['total_validation_time'] for m in validation_metrics]):.3f}s")
+            self.logger.info(f"  Avg Inference Time: {np.mean([m['avg_inference_time'] for m in validation_metrics]):.4f}s")
+        self.logger.info("="*80)
 
 
 def get_logger():
@@ -52,66 +194,8 @@ def load_embedding_weight(textural_embedding_matrix, device):
     return embedding_weight
 
 
-def count_model_parameters(model):
-    """Count total and trainable parameters in the model"""
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    
-    param_details = {}
-    for name, param in model.named_parameters():
-        param_details[name] = {
-            'shape': list(param.shape),
-            'num_params': param.numel(),
-            'requires_grad': param.requires_grad
-        }
-    
-    return {
-        'total_params': total_params,
-        'trainable_params': trainable_params,
-        'param_details': param_details
-    }
-
-
-def measure_computational_cost(model, sample_batch, device):
-    """Measure FLOPs and memory usage"""
-    global logger  # Ensure access to global logger
-    model.eval()
-    
-    # Create sample input for FLOPs calculation
-    with torch.no_grad():
-        # Measure FLOPs
-        try:
-            flops, params = profile(model, inputs=(sample_batch,), verbose=False)
-            flops_readable, params_readable = clever_format([flops, params], "%.3f")
-        except Exception as e:
-            print(f"Could not measure FLOPs: {e}")  # Use print instead of logger for safety
-            flops_readable, params_readable = "N/A", "N/A"
-    
-    # Measure GPU memory usage
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
-        gpu_memory_used = torch.cuda.memory_allocated(device) / 1024**3  # GB
-        gpu_memory_cached = torch.cuda.memory_reserved(device) / 1024**3  # GB
-    else:
-        gpu_memory_used = 0
-        gpu_memory_cached = 0
-    
-    # Measure CPU memory usage
-    process = psutil.Process(os.getpid())
-    cpu_memory_used = process.memory_info().rss / 1024**3  # GB
-    
-    return {
-        'flops': flops_readable,
-        'params_from_profile': params_readable,
-        'gpu_memory_used_gb': gpu_memory_used,
-        'gpu_memory_cached_gb': gpu_memory_cached,
-        'cpu_memory_used_gb': cpu_memory_used
-    }
-
-
-def training(device, model, train_data_loader, optimizer, epoch):
+def training(device, model, train_data_loader, optimizer, epoch, logger, args):
     """Enhanced training function with timing and performance metrics"""
-    global logger, args  # Ensure access to global variables
     model.train()
     loss_scalar = 0.
     pos = 0
@@ -177,9 +261,8 @@ def training(device, model, train_data_loader, optimizer, epoch):
     }
 
 
-def validate(device, model, val_loader, t_len):
+def validate(device, model, val_loader, t_len, logger, args):
     """Enhanced validation with timing metrics"""
-    global logger, args  # Ensure access to global variables
     logger.info('>>>>>>>>>>>>>>>> Start Wide Evaluation >>>>>>>>>>>>>>>>')
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -239,9 +322,8 @@ def validate(device, model, val_loader, t_len):
     }
 
 
-def validate_AUC(device, model, val_loader, t_len):
+def validate_AUC(device, model, val_loader, t_len, logger, args):
     """Enhanced AUC validation with timing"""
-    global logger, args  # Ensure access to global variables
     logger.info('>>>>>>>>>>>>>>>> Start AUC Evaluation >>>>>>>>>>>>>>>>')
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -317,70 +399,10 @@ def interaction_weight(train_data):
     return ub_inter_weights_dict, tb_inter_weights_dict, ub_default_weight, tb_default_weight
 
 
-def save_performance_report(args, param_info, computational_cost, training_metrics, validation_metrics):
-    """Save comprehensive performance report"""
-    global logger  # Ensure access to global logger
-    report = {
-        'model_info': {
-            'architecture': args.arch,
-            'dataset': args.dataset,
-            'mode': args.mode,
-            'hidden_dim': args.hidden_dim,
-            'batch_size': args.batch_size,
-            'learning_rate': args.base_lr,
-            'weight_decay': args.wd,
-            'epochs': args.epochs
-        },
-        'parameter_info': param_info,
-        'computational_cost': computational_cost,
-        'training_metrics': training_metrics,
-        'validation_metrics': validation_metrics,
-        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
-    }
-    
-    # Create reports directory if it doesn't exist
-    os.makedirs('reports', exist_ok=True)
-    
-    # Save detailed report
-    report_filename = f'reports/CRBPR_performance_report_{args.dataset}_{args.mode}_{time.strftime("%Y%m%d_%H%M%S")}.json'
-    with open(report_filename, 'w') as f:
-        json.dump(report, f, indent=2, default=str)
-    
-    logger.info(f"Performance report saved to: {report_filename}")
-    
-    # Print summary
-    logger.info("="*80)
-    logger.info("CRBPR MODEL PERFORMANCE SUMMARY")
-    logger.info("="*80)
-    logger.info(f"Model: {args.arch}")
-    logger.info(f"Dataset: {args.dataset}")
-    logger.info(f"Mode: {args.mode}")
-    logger.info("-"*50)
-    logger.info("PARAMETER STATISTICS:")
-    logger.info(f"  Total Parameters: {param_info['total_params']:,}")
-    logger.info(f"  Trainable Parameters: {param_info['trainable_params']:,}")
-    logger.info(f"  Parameter Size: {param_info['trainable_params'] * 4 / 1024**2:.2f} MB (float32)")
-    logger.info("-"*50)
-    logger.info("COMPUTATIONAL COST:")
-    logger.info(f"  FLOPs: {computational_cost['flops']}")
-    logger.info(f"  GPU Memory Used: {computational_cost['gpu_memory_used_gb']:.3f} GB")
-    logger.info(f"  CPU Memory Used: {computational_cost['cpu_memory_used_gb']:.3f} GB")
-    logger.info("-"*50)
-    logger.info("TIMING METRICS:")
-    if training_metrics:
-        logger.info(f"  Avg Training Time per Epoch: {np.mean([m['epoch_time'] for m in training_metrics]):.3f}s")
-        logger.info(f"  Avg Forward Pass Time: {np.mean([m['avg_forward_time'] for m in training_metrics]):.4f}s")
-        logger.info(f"  Avg Backward Pass Time: {np.mean([m['avg_backward_time'] for m in training_metrics]):.4f}s")
-    if validation_metrics:
-        logger.info(f"  Avg Validation Time: {np.mean([m['total_validation_time'] for m in validation_metrics]):.3f}s")
-        logger.info(f"  Avg Inference Time: {np.mean([m['avg_inference_time'] for m in validation_metrics]):.4f}s")
-    logger.info("="*80)
-
-
 def main():
-    global logger, writer, args
     args = parse_configure()
     logger = get_logger()
+    tracker = PerformanceTracker(logger)
     
     logger.info("=> creating CRBPR model ...")
     
@@ -414,7 +436,7 @@ def main():
     model.to(args.device)
     
     # Count parameters
-    param_info = count_model_parameters(model)
+    param_info = tracker.count_model_parameters(model)
     logger.info(f"CRBPR Model Parameters:")
     logger.info(f"  Total: {param_info['total_params']:,}")
     logger.info(f"  Trainable: {param_info['trainable_params']:,}")
@@ -465,9 +487,19 @@ def main():
     t_len = len(test_data_ori)
 
     # Measure computational cost with sample batch
-    sample_batch = next(iter(train_loader))
-    sample_batch = [x.to(args.device) for x in sample_batch]
-    computational_cost = measure_computational_cost(model, sample_batch, args.device)
+    try:
+        sample_batch = next(iter(train_loader))
+        sample_batch = [x.to(args.device) for x in sample_batch]
+        computational_cost = tracker.measure_computational_cost(model, sample_batch, args.device)
+    except Exception as e:
+        logger.warning(f"Could not measure computational cost: {e}")
+        computational_cost = {
+            'flops': 'N/A',
+            'params_from_profile': 'N/A',
+            'gpu_memory_used_gb': 0,
+            'gpu_memory_cached_gb': 0,
+            'cpu_memory_used_gb': 0
+        }
     
     early_stopping = EarlyStopping(patience=args.patience, verbose=True)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 0.97 ** epoch)
@@ -485,17 +517,17 @@ def main():
         epoch_log = epoch + 1
         
         # Training with metrics
-        train_metrics = training(args.device, model, train_loader, optimizer, epoch)
+        train_metrics = training(args.device, model, train_loader, optimizer, epoch, logger, args)
         training_metrics.append(train_metrics)
         scheduler.step()
 
         # Validation with metrics
-        test_metrics, preds, val_timing = validate(args.device, model, test_loader, t_len)
+        test_metrics, preds, val_timing = validate(args.device, model, test_loader, t_len, logger, args)
         validation_metrics.append(val_timing)
         
         if args.evaluate:
             args.wide_evaluate = False
-            AUC_v, pos_v, auc_timing = validate_AUC(args.device, model, valid_loader, v_len)
+            AUC_v, pos_v, auc_timing = validate_AUC(args.device, model, valid_loader, v_len, logger, args)
             
             if args.early_stop:
                 early_stopping(AUC_v, model)
@@ -507,7 +539,7 @@ def main():
     logger.info(f"Total Training Time: {total_training_time:.3f}s")
     
     # Save comprehensive performance report
-    save_performance_report(args, param_info, computational_cost, training_metrics, validation_metrics)
+    tracker.save_performance_report(args, param_info, computational_cost, training_metrics, validation_metrics)
 
 
 if __name__ == '__main__':
