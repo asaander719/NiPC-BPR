@@ -24,7 +24,12 @@ def parse_configure():
     if args.arch == None:
         raise Exception("Please provide the model name through --model.")
     model_name = args.arch#.lower()
-    args.config = 'config/APCL_' + str(args.dataset) + '_' + str(args.mode) + '.yaml'
+    
+    # Use specific config file for CRBPR
+    if args.arch == 'CRBPR':
+        args.config = 'config/CRBPR_' + str(args.dataset) + '_' + str(args.mode) + '.yaml'
+    else:
+        args.config = 'config/APCL_' + str(args.dataset) + '_' + str(args.mode) + '.yaml'
 
     assert args.config is not None
     cfg = config.load_cfg_from_cfg_file(args.config)
